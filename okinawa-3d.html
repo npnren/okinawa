@@ -1,0 +1,637 @@
+<meta charset="utf-8">
+<title>沖縄本島 3D Terrain</title>
+<style>
+  :root {
+    --sea-deep: #04121f;
+    --sea-mid: #0b2b47;
+    --panel: rgba(7, 24, 40, 0.84);
+    --line: rgba(126, 214, 206, 0.16);
+    --text: #eef3ee;
+    --muted: #93aebd;
+    --reef: #5fd4c8;
+    --coral: #ff6b6b;
+    --font-jp: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", sans-serif;
+    --font-display: "Avenir Next Condensed", "Avenir Next", "Helvetica Neue", var(--font-jp);
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: radial-gradient(120% 90% at 50% 0%, var(--sea-mid) 0%, var(--sea-deep) 70%);
+    font-family: var(--font-jp);
+    color: var(--text);
+  }
+  canvas.stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  #overlay { pointer-events: none; }
+
+  .panel {
+    position: fixed; top: 18px; left: 18px; width: 264px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 18px 20px 16px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 12px 40px rgba(0, 6, 12, 0.45);
+  }
+  .eyebrow {
+    font-family: var(--font-display);
+    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--reef); margin-bottom: 8px;
+    font-variant-numeric: tabular-nums;
+  }
+  h1 {
+    margin: 0; font-family: var(--font-display);
+    font-size: 40px; font-weight: 700; letter-spacing: 0.04em; line-height: 1;
+    text-wrap: balance;
+  }
+  h1 .jp { display: block; font-family: var(--font-jp); font-size: 15px; font-weight: 600; letter-spacing: 0.3em; color: var(--muted); margin-top: 7px; }
+  .sub { margin: 10px 0 0; font-size: 11.5px; color: var(--muted); letter-spacing: 0.04em; }
+
+  .ctl { display: flex; flex-direction: column; gap: 11px; margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); }
+  .ctl label { font-size: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ctl output { font-family: var(--font-display); font-size: 12px; color: var(--reef); font-variant-numeric: tabular-nums; letter-spacing: 0.06em; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 3px; margin: 0;
+    background: linear-gradient(90deg, #1c4a5e, #2c7d8a); border-radius: 2px; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+    background: var(--coral); border: 2px solid #071826; box-shadow: 0 0 0 1px rgba(255,107,107,.4);
+  }
+  input[type="range"]:focus-visible { outline: 2px solid var(--reef); outline-offset: 4px; }
+  .row { cursor: pointer; justify-content: flex-start !important; }
+  .row input { accent-color: #2c7d8a; width: 15px; height: 15px; cursor: pointer; }
+  button#reset {
+    font-family: var(--font-jp); font-size: 12px; color: var(--text);
+    background: transparent; border: 1px solid rgba(126, 214, 206, 0.35); border-radius: 3px;
+    padding: 6px 10px; cursor: pointer; letter-spacing: 0.08em; transition: background 0.15s;
+  }
+  button#reset:hover { background: rgba(95, 212, 200, 0.12); }
+  button#reset:focus-visible { outline: 2px solid var(--reef); outline-offset: 2px; }
+
+  .facts { margin-top: 14px; font-size: 10.5px; color: var(--muted); letter-spacing: 0.05em; font-variant-numeric: tabular-nums; }
+  .note { margin-top: 6px; font-size: 9.5px; color: #5f7889; line-height: 1.5; }
+
+  .legend {
+    position: fixed; left: 18px; bottom: 18px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 10px 14px 11px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .legend .cap { font-family: var(--font-display); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .legend .bar {
+    width: 170px; height: 8px; border-radius: 2px;
+    background: linear-gradient(90deg, #e9dfb4 0%, #bed18a 4%, #8cba6a 12%, #549250 28%, #346e42 52%, #26543a 79%, #406046 100%);
+  }
+  .legend .ticks { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: 0.05em; }
+  .legend .sea { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 9.5px; color: var(--muted); }
+  .legend .sea i { width: 26px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, #a8e8dd, #268cb9 55%, #08304f); }
+
+  .hint {
+    position: fixed; right: 18px; bottom: 18px; font-size: 10.5px; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 7px 12px; letter-spacing: 0.06em;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  }
+  .fallback {
+    position: fixed; inset: 0; display: none; place-items: center; text-align: center;
+    color: var(--muted); font-size: 13px; line-height: 2; padding: 24px;
+  }
+  @media (max-width: 640px) {
+    .panel { width: auto; right: 18px; padding: 14px 16px 13px; }
+    h1 { font-size: 30px; }
+    .hint { display: none; }
+    .legend .bar { width: 130px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<canvas id="gl" class="stage"></canvas>
+<canvas id="overlay" class="stage"></canvas>
+
+<div class="panel">
+  <div class="eyebrow">East China Sea · 26.5°N 128.0°E</div>
+  <h1>OKINAWA<span class="jp">沖 縄 本 島</span></h1>
+  <p class="sub">立体地形図 — Interactive 3D Terrain</p>
+  <div class="ctl">
+    <label for="exg">高低の強調<output id="exgv">×11</output></label>
+    <input type="range" id="exg" min="2" max="25" step="1" value="11" aria-label="高低の強調">
+    <label class="row"><input type="checkbox" id="rot" checked> 自動回転</label>
+    <label class="row"><input type="checkbox" id="lbl" checked> 地名ラベル</label>
+    <button id="reset" type="button">視点をリセット</button>
+  </div>
+  <div class="facts">最高点：与那覇岳 503 m　全長：約 107 km</div>
+  <div class="note">地形は海岸線データから手続き生成した概念図です（実測DEMではありません）。</div>
+</div>
+
+<div class="legend">
+  <div class="cap">Elevation 標高</div>
+  <div class="bar"></div>
+  <div class="ticks"><span>0 m</span><span>250</span><span>500+</span></div>
+  <div class="sea"><i></i>サンゴ礁の浅瀬 → 外洋</div>
+</div>
+
+<div class="hint">ドラッグ：回転　ホイール：ズーム　ピンチ対応</div>
+<div class="fallback" id="fallback"><p>このページの表示には WebGL が必要です。<br>お使いのブラウザでは WebGL を利用できませんでした。</p></div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ================= geography (lon, lat) ================= */
+  var OKINAWA = [
+    [128.255,26.870],[128.310,26.800],[128.330,26.740],[128.290,26.660],
+    [128.220,26.580],[128.160,26.510],[128.090,26.460],[128.030,26.440],
+    [127.975,26.445],[127.930,26.410],
+    [127.955,26.370],[127.995,26.330],[127.960,26.300],[127.900,26.290],
+    [127.860,26.270],[127.820,26.200],
+    [127.840,26.170],[127.878,26.145],[127.830,26.100],
+    [127.760,26.060],[127.700,26.065],[127.655,26.090],
+    [127.660,26.150],[127.680,26.210],[127.720,26.270],[127.755,26.310],
+    [127.740,26.360],[127.715,26.400],
+    [127.712,26.440],[127.770,26.470],[127.830,26.475],[127.885,26.495],
+    [127.930,26.520],[127.960,26.560],
+    [127.930,26.600],[127.885,26.625],[127.865,26.660],[127.845,26.695],
+    [127.870,26.720],[127.920,26.705],[127.970,26.685],[128.005,26.665],
+    [128.015,26.705],[128.045,26.745],[128.090,26.780],[128.145,26.820],
+    [128.200,26.855]
+  ];
+  function ellipse(cx, cy, rx, ry, rot, n) {
+    rot = rot || 0; n = n || 22;
+    var pts = [], c = Math.cos(rot), s = Math.sin(rot);
+    for (var i = 0; i < n; i++) {
+      var a = 2 * Math.PI * i / n, x = rx * Math.cos(a), y = ry * Math.sin(a);
+      pts.push([cx + x * c - y * s, cy + x * s + y * c]);
+    }
+    return pts;
+  }
+  var POLYS = [
+    OKINAWA,
+    ellipse(127.790, 26.720, 0.052, 0.024, 0.05),  // 伊江島
+    ellipse(127.978, 27.020, 0.022, 0.062, 0.5),   // 伊平屋島
+    ellipse(127.940, 26.930, 0.026, 0.022),        // 伊是名島
+    ellipse(127.360, 26.190, 0.020, 0.045, 0.15),  // 渡嘉敷島
+    ellipse(127.300, 26.230, 0.032, 0.015, 0.1),   // 座間味島
+    ellipse(127.278, 26.185, 0.018, 0.016),        // 阿嘉島
+    ellipse(127.855, 26.645, 0.014, 0.016)         // 瀬底島
+  ];
+  var KERAMA = { 4: 1, 5: 1, 6: 1 };
+
+  var LON0 = 127.15, LON1 = 128.45, LAT0 = 25.95, LAT1 = 27.12;
+  var LONC = (LON0 + LON1) / 2, LATC = (LAT0 + LAT1) / 2;
+  var KX = 111.32 * Math.cos(26.5 * Math.PI / 180), KY = 110.57;
+  function toKm(lon, lat) { return [(lon - LONC) * KX, (lat - LATC) * KY]; }
+  var POLYS_KM = POLYS.map(function (p) { return p.map(function (q) { return toKm(q[0], q[1]); }); });
+
+  /* ================= sampling ================= */
+  function pointInPoly(px, py, poly) {
+    var inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function distToPoly(px, py, poly) {
+    var d2 = 1e18;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      var x1 = poly[j][0], y1 = poly[j][1], dx = poly[i][0] - x1, dy = poly[i][1] - y1;
+      var t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+      t = t < 0 ? 0 : (t > 1 ? 1 : t);
+      var ex = px - (x1 + t * dx), ey = py - (y1 + t * dy);
+      var q = ex * ex + ey * ey;
+      if (q < d2) d2 = q;
+    }
+    return Math.sqrt(d2);
+  }
+  function hash2(i, j) {
+    var n = (i * 374761393 + j * 668265263) >>> 0;
+    n = (Math.imul(n ^ (n >>> 13), 1274126177)) >>> 0;
+    return ((n ^ (n >>> 16)) & 0xFFFF) / 65535;
+  }
+  function vnoise(x, y) {
+    var i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j;
+    var ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+    var a = hash2(i, j), b = hash2(i + 1, j), c = hash2(i, j + 1), d = hash2(i + 1, j + 1);
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  }
+  function fbm(x, y) { return vnoise(x, y) * 0.55 + vnoise(x * 2.1, y * 2.1) * 0.30 + vnoise(x * 4.3, y * 4.3) * 0.15; }
+  function sstep(a, b, t) { t = Math.max(0, Math.min(1, (t - a) / (b - a))); return t * t * (3 - 2 * t); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  var TACCHU = toKm(127.822, 26.727); // 城山（伊江島タッチュー）
+
+  function sample(px, py, lon, lat) {
+    var best = 1e18, inside = false, pidx = -1;
+    for (var k = 0; k < POLYS_KM.length; k++) {
+      var d = distToPoly(px, py, POLYS_KM[k]);
+      if (d < best) { best = d; pidx = k; }
+      if (pointInPoly(px, py, POLYS_KM[k])) inside = true;
+    }
+    var sd = inside ? best : -best;
+    if (sd <= 0) return { d: sd, h: 0 };
+    var tN = sstep(26.45, 26.62, lat);
+    var A = lerp(150, 540, tN) + (KERAMA[pidx] ? 130 : 0);
+    var L = lerp(1.8, 3.2, tN);
+    var h = A * (1 - Math.exp(-sd / L));
+    h *= 0.72 + 0.55 * fbm(lon * 38, lat * 38);
+    h += 55 * fbm(lon * 14, lat * 14) * sstep(0.4, 2.0, sd);
+    var dx = px - TACCHU[0], dy = py - TACCHU[1];
+    h += 140 * Math.exp(-(dx * dx + dy * dy) / (2 * 0.45 * 0.45));
+    return { d: sd, h: h };
+  }
+
+  /* ================= colors ================= */
+  var OCEAN = [[0,[168,232,221]],[0.45,[94,199,205]],[1.6,[38,140,185]],[4.5,[16,80,130]],[11,[8,44,82]],[40,[6,30,60]]];
+  var LAND  = [[0,[233,223,180]],[15,[190,209,138]],[60,[140,186,106]],[150,[84,146,80]],[280,[52,110,66]],[430,[38,84,58]],[560,[64,96,70]]];
+  function ramp(stops, v) {
+    if (v <= stops[0][0]) return stops[0][1];
+    for (var i = 1; i < stops.length; i++) {
+      if (v <= stops[i][0]) {
+        var a = stops[i - 1], b = stops[i], t = (v - a[0]) / (b[0] - a[0]);
+        return [lerp(a[1][0], b[1][0], t), lerp(a[1][1], b[1][1], t), lerp(a[1][2], b[1][2], t)];
+      }
+    }
+    return stops[stops.length - 1][1];
+  }
+
+  /* ================= build mesh ================= */
+  var NX = 180, NY = 220, VX = NX + 1, VY = NY + 1;
+  var heights = new Float32Array(VX * VY);
+  var dxKm = (LON1 - LON0) * KX / NX, dyKm = (LAT1 - LAT0) * KY / NY;
+  var verts = new Float32Array(VX * VY * 8); // x, y, h, gx, gy, r, g, b
+  var i, j, idx;
+
+  for (j = 0; j < VY; j++) {
+    var lat = LAT0 + (LAT1 - LAT0) * j / NY;
+    for (i = 0; i < VX; i++) {
+      var lon = LON0 + (LON1 - LON0) * i / NX;
+      var km = toKm(lon, lat);
+      var s = sample(km[0], km[1], lon, lat);
+      idx = (j * VX + i);
+      heights[idx] = s.h;
+      var o = idx * 8;
+      verts[o] = km[0]; verts[o + 1] = km[1]; verts[o + 2] = s.h;
+      var col;
+      if (s.d <= 0) {
+        col = ramp(OCEAN, -s.d);
+        if (-s.d < 1.5) { // break up the reef band a little
+          var f = 0.94 + 0.10 * fbm(lon * 60, lat * 60);
+          col = [col[0] * f, col[1] * f, col[2] * f];
+        }
+      } else if (s.d < 0.35 && s.h < 40) {
+        col = [233, 223, 180];
+      } else {
+        var v = 0.94 + 0.12 * fbm(lon * 55, lat * 55);
+        col = ramp(LAND, s.h);
+        col = [col[0] * v, col[1] * v, col[2] * v];
+      }
+      verts[o + 5] = Math.min(255, col[0]) / 255;
+      verts[o + 6] = Math.min(255, col[1]) / 255;
+      verts[o + 7] = Math.min(255, col[2]) / 255;
+    }
+  }
+  // gradients (m per km) for lighting
+  for (j = 0; j < VY; j++) {
+    for (i = 0; i < VX; i++) {
+      idx = j * VX + i;
+      var hl = heights[j * VX + Math.max(0, i - 1)], hr = heights[j * VX + Math.min(NX, i + 1)];
+      var hd = heights[Math.max(0, j - 1) * VX + i], hu = heights[Math.min(NY, j + 1) * VX + i];
+      verts[idx * 8 + 3] = (hr - hl) / (2 * dxKm);
+      verts[idx * 8 + 4] = (hu - hd) / (2 * dyKm);
+    }
+  }
+  var indices = new Uint16Array(NX * NY * 6);
+  var p = 0;
+  for (j = 0; j < NY; j++) {
+    for (i = 0; i < NX; i++) {
+      var a = j * VX + i, b2 = a + 1, c2 = a + VX, d2 = c2 + 1;
+      indices[p++] = a; indices[p++] = b2; indices[p++] = c2;
+      indices[p++] = b2; indices[p++] = d2; indices[p++] = c2;
+    }
+  }
+  // skirt walls (drawn with uZ = 1000 so "h" is in km directly)
+  var X0 = toKm(LON0, LAT0)[0], Y0 = toKm(LON0, LAT0)[1];
+  var X1 = toKm(LON1, LAT1)[0], Y1 = toKm(LON1, LAT1)[1];
+  var WC = [11 / 255, 33 / 255, 56 / 255], DEEP = -2.0;
+  var wallVerts = [], wallIdx = [];
+  function wall(ax, ay, bx, by) {
+    var base = wallVerts.length / 8;
+    [[ax, ay, 0], [bx, by, 0], [ax, ay, DEEP], [bx, by, DEEP]].forEach(function (q) {
+      wallVerts.push(q[0], q[1], q[2], 0, 0, WC[0], WC[1], WC[2]);
+    });
+    wallIdx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+  }
+  wall(X0, Y0, X1, Y0); wall(X1, Y0, X1, Y1); wall(X1, Y1, X0, Y1); wall(X0, Y1, X0, Y0);
+
+  /* ================= WebGL ================= */
+  var canvas = document.getElementById("gl");
+  var overlay = document.getElementById("overlay");
+  var octx = overlay.getContext("2d");
+  var gl = canvas.getContext("webgl", { antialias: true, alpha: true });
+  if (!gl) {
+    document.getElementById("fallback").style.display = "grid";
+    return;
+  }
+
+  var VS = [
+    "attribute vec3 aPos;",
+    "attribute vec2 aGrad;",
+    "attribute vec3 aCol;",
+    "uniform mat4 uMVP;",
+    "uniform float uZ;",
+    "varying vec3 vCol;",
+    "void main() {",
+    "  float zs = uZ * 0.001;",
+    "  vec3 p = vec3(aPos.x, aPos.y, aPos.z * zs);",
+    "  vec3 n = normalize(vec3(-aGrad.x * zs, -aGrad.y * zs, 1.0));",
+    "  vec3 l = normalize(vec3(-0.5, 0.5, 0.75));",
+    "  float diff = max(dot(n, l), 0.0);",
+    "  vCol = aCol * (0.5 + 0.55 * diff);",
+    "  gl_Position = uMVP * vec4(p, 1.0);",
+    "}"
+  ].join("\n");
+  var FS = "precision mediump float; varying vec3 vCol; void main(){ gl_FragColor = vec4(vCol, 1.0); }";
+
+  function shader(type, src) {
+    var sh = gl.createShader(type);
+    gl.shaderSource(sh, src); gl.compileShader(sh);
+    return sh;
+  }
+  var prog = gl.createProgram();
+  gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+  var uMVP = gl.getUniformLocation(prog, "uMVP");
+  var uZ = gl.getUniformLocation(prog, "uZ");
+  var aPos = gl.getAttribLocation(prog, "aPos");
+  var aGrad = gl.getAttribLocation(prog, "aGrad");
+  var aCol = gl.getAttribLocation(prog, "aCol");
+
+  function makeBuffers(v, ix) {
+    var vb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
+    var ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, ix, gl.STATIC_DRAW);
+    return { vb: vb, ib: ib, n: ix.length };
+  }
+  var terrain = makeBuffers(verts, indices);
+  var walls = makeBuffers(new Float32Array(wallVerts), new Uint16Array(wallIdx));
+
+  function bindAndDraw(buf, zval) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.vb);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.ib);
+    gl.enableVertexAttribArray(aPos);
+    gl.enableVertexAttribArray(aGrad);
+    gl.enableVertexAttribArray(aCol);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
+    gl.vertexAttribPointer(aGrad, 2, gl.FLOAT, false, 32, 12);
+    gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 32, 20);
+    gl.uniform1f(uZ, zval);
+    gl.drawElements(gl.TRIANGLES, buf.n, gl.UNSIGNED_SHORT, 0);
+  }
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(0, 0, 0, 0);
+
+  /* ================= matrices ================= */
+  function perspective(fovy, aspect, near, far) {
+    var f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    var m = new Float32Array(16);
+    m[0] = f / aspect; m[5] = f; m[10] = (far + near) * nf; m[11] = -1; m[14] = 2 * far * near * nf;
+    return m;
+  }
+  function lookAt(eye, ctr, up) {
+    var zx = eye[0] - ctr[0], zy = eye[1] - ctr[1], zz = eye[2] - ctr[2];
+    var zl = Math.hypot(zx, zy, zz); zx /= zl; zy /= zl; zz /= zl;
+    var xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+    var xl = Math.hypot(xx, xy, xz); xx /= xl; xy /= xl; xz /= xl;
+    var yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+    var m = new Float32Array(16);
+    m[0] = xx; m[1] = yx; m[2] = zx; m[3] = 0;
+    m[4] = xy; m[5] = yy; m[6] = zy; m[7] = 0;
+    m[8] = xz; m[9] = yz; m[10] = zz; m[11] = 0;
+    m[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+    m[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+    m[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+    m[15] = 1;
+    return m;
+  }
+  function mul(a, b) {
+    var m = new Float32Array(16);
+    for (var r = 0; r < 4; r++) for (var c = 0; c < 4; c++) {
+      m[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+    }
+    return m;
+  }
+  function project(m, x, y, z, w2, h2) {
+    var cw = m[0] * x + m[4] * y + m[8] * z + m[12];
+    var ch = m[1] * x + m[5] * y + m[9] * z + m[13];
+    var cz = m[2] * x + m[6] * y + m[10] * z + m[14];
+    var ww = m[3] * x + m[7] * y + m[11] * z + m[15];
+    if (ww <= 0.001) return null;
+    return [(cw / ww * 0.5 + 0.5) * w2, (0.5 - ch / ww * 0.5) * h2, cz / ww];
+  }
+
+  /* ================= camera / state ================= */
+  var TARGET_LL = toKm(127.96, 26.47);
+  var HOME = { yaw: -0.35, pitch: 0.92, dist: 175 };
+  var cam = { yaw: HOME.yaw, pitch: HOME.pitch, dist: HOME.dist };
+  window.__cam = cam;
+  var exg = 11;
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var autoRotate = !reduced;
+  var showLabels = true;
+  var mvp = null;
+
+  document.getElementById("rot").checked = autoRotate;
+  document.getElementById("rot").addEventListener("change", function () { autoRotate = this.checked; });
+  document.getElementById("lbl").addEventListener("change", function () { showLabels = this.checked; });
+  var exgIn = document.getElementById("exg"), exgOut = document.getElementById("exgv");
+  exgIn.addEventListener("input", function () { exg = +this.value; exgOut.textContent = "×" + exg; });
+  document.getElementById("reset").addEventListener("click", function () {
+    cam.yaw = HOME.yaw; cam.pitch = HOME.pitch; cam.dist = HOME.dist;
+  });
+
+  /* ================= places ================= */
+  function heightAt(lon, lat) {
+    var gi = Math.round((lon - LON0) / (LON1 - LON0) * NX);
+    var gj = Math.round((lat - LAT0) / (LAT1 - LAT0) * NY);
+    gi = Math.max(0, Math.min(NX, gi)); gj = Math.max(0, Math.min(NY, gj));
+    return heights[gj * VX + gi];
+  }
+  // priority order: earlier wins on label collision
+  var PLACES = [
+    { lon: 127.680, lat: 26.213, jp: "那覇", en: "NAHA", t: "city" },
+    { lon: 127.978, lat: 26.588, jp: "名護", en: "NAGO", t: "city" },
+    { lon: 128.255, lat: 26.867, jp: "辺戸岬", en: "CAPE HEDO", t: "cape" },
+    { lon: 128.216, lat: 26.743, jp: "与那覇岳", en: "503 m", t: "peak" },
+    { lon: 127.805, lat: 26.335, jp: "沖縄市", en: "OKINAWA CITY", t: "city" },
+    { lon: 127.790, lat: 26.735, jp: "伊江島", en: "IE ISLAND", t: "island" },
+    { lon: 127.320, lat: 26.205, jp: "慶良間諸島", en: "KERAMA IS.", t: "island" },
+    { lon: 127.712, lat: 26.442, jp: "残波岬", en: "CAPE ZANPA", t: "cape" },
+    { lon: 127.667, lat: 26.123, jp: "糸満", en: "ITOMAN", t: "city" },
+    { lon: 127.898, lat: 26.658, jp: "本部", en: "MOTOBU", t: "city" },
+    { lon: 127.978, lat: 27.020, jp: "伊平屋島", en: "IHEYA", t: "island" },
+    { lon: 127.940, lat: 26.930, jp: "伊是名島", en: "IZENA", t: "island" },
+    { lon: 127.931, lat: 26.505, jp: "万座毛", en: "CAPE MANZA", t: "cape" },
+    { lon: 127.755, lat: 26.356, jp: "嘉手納", en: "KADENA", t: "city" },
+    { lon: 127.719, lat: 26.220, jp: "首里城", en: "SHURI CASTLE", t: "site" }
+  ];
+  PLACES.forEach(function (pl) {
+    var km = toKm(pl.lon, pl.lat);
+    pl.x = km[0]; pl.y = km[1]; pl.h = heightAt(pl.lon, pl.lat);
+  });
+
+  /* ================= input ================= */
+  var pointers = new Map(), lastPinch = 0;
+  canvas.addEventListener("pointerdown", function (e) {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      var a = Array.from(pointers.values());
+      lastPinch = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+    }
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    var pt = pointers.get(e.pointerId);
+    if (!pt) return;
+    if (pointers.size === 1) {
+      cam.yaw -= (e.clientX - pt.x) * 0.005;
+      cam.pitch = Math.max(0.15, Math.min(1.45, cam.pitch + (e.clientY - pt.y) * 0.004));
+      autoRotate = false; document.getElementById("rot").checked = false;
+    }
+    pt.x = e.clientX; pt.y = e.clientY;
+    if (pointers.size === 2) {
+      var a = Array.from(pointers.values());
+      var d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+      if (lastPinch > 0) cam.dist = Math.max(35, Math.min(420, cam.dist * lastPinch / d));
+      lastPinch = d;
+    }
+  });
+  function endPointer(e) { pointers.delete(e.pointerId); lastPinch = 0; }
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    cam.dist = Math.max(12, Math.min(420, cam.dist * Math.exp(e.deltaY * 0.0025)));
+  }, { passive: false });
+  canvas.addEventListener("dblclick", function (e) {
+    e.preventDefault();
+    cam.dist = Math.max(12, cam.dist * 0.5); // double-click: zoom in fast (shift+dblclick: out)
+    if (e.shiftKey) cam.dist = Math.min(420, cam.dist * 4);
+  });
+
+  /* ================= render ================= */
+  function resize() {
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var w = window.innerWidth, h = window.innerHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    overlay.width = w * dpr; overlay.height = h * dpr;
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  var lastT = 0;
+  function frame(t) {
+    var dt = Math.min(0.05, (t - lastT) / 1000); lastT = t;
+    if (autoRotate) cam.yaw += dt * 0.06;
+
+    var w = window.innerWidth, h = window.innerHeight;
+    var cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    var eye = [
+      TARGET_LL[0] + cam.dist * cp * Math.sin(cam.yaw),
+      TARGET_LL[1] - cam.dist * cp * Math.cos(cam.yaw),
+      1.5 + cam.dist * sp
+    ];
+    var view = lookAt(eye, [TARGET_LL[0], TARGET_LL[1], 1.5], [0, 0, 1]);
+    var proj = perspective(40 * Math.PI / 180, w / h, 2, 2000);
+    mvp = mul(proj, view);
+
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.uniformMatrix4fv(uMVP, false, mvp);
+    bindAndDraw(walls, 1000);
+    bindAndDraw(terrain, exg);
+
+    drawOverlay(w, h);
+    requestAnimationFrame(frame);
+  }
+
+  function drawOverlay(w, h) {
+    octx.clearRect(0, 0, w, h);
+    // compass: project a small northward step to find screen-north
+    var c0 = project(mvp, TARGET_LL[0], TARGET_LL[1], 0, w, h);
+    var c1 = project(mvp, TARGET_LL[0], TARGET_LL[1] + 5, 0, w, h);
+    if (c0 && c1) {
+      var ang = Math.atan2(c1[1] - c0[1], c1[0] - c0[0]);
+      var cx = w - 44, cy = 44;
+      octx.strokeStyle = "rgba(126,214,206,0.35)";
+      octx.lineWidth = 1;
+      octx.beginPath(); octx.arc(cx, cy, 17, 0, Math.PI * 2); octx.stroke();
+      octx.strokeStyle = "#ff6b6b"; octx.lineWidth = 1.6;
+      octx.beginPath();
+      octx.moveTo(cx, cy);
+      octx.lineTo(cx + Math.cos(ang) * 12, cy + Math.sin(ang) * 12);
+      octx.stroke();
+      octx.fillStyle = "#eef3ee";
+      octx.font = "700 9px 'Avenir Next', sans-serif";
+      octx.textAlign = "center"; octx.textBaseline = "middle";
+      octx.fillText("N", cx + Math.cos(ang) * 24, cy + Math.sin(ang) * 24);
+    }
+    if (!showLabels) return;
+
+    var placed = [];
+    function collides(r) {
+      for (var k = 0; k < placed.length; k++) {
+        var q = placed[k];
+        if (r[0] < q[0] + q[2] && r[0] + r[2] > q[0] && r[1] < q[1] + q[3] && r[1] + r[3] > q[1]) return true;
+      }
+      return false;
+    }
+    octx.textAlign = "center";
+    for (var k = 0; k < PLACES.length; k++) {
+      var pl = PLACES[k];
+      var z = pl.h * 0.001 * exg;
+      var s = project(mvp, pl.x, pl.y, z, w, h);
+      if (!s || s[0] < -40 || s[0] > w + 40 || s[1] < -20 || s[1] > h + 20) continue;
+      octx.font = "600 12px 'Hiragino Sans', sans-serif";
+      var tw = Math.max(octx.measureText(pl.jp).width, 40);
+      var rect = [s[0] - tw / 2 - 5, s[1] - 36, tw + 10, 40];
+      if (collides(rect)) continue;
+      placed.push(rect);
+
+      var isPeak = pl.t === "peak";
+      // marker
+      if (isPeak) {
+        octx.fillStyle = "#ff6b6b";
+        octx.beginPath();
+        octx.moveTo(s[0], s[1] - 5); octx.lineTo(s[0] - 4.5, s[1] + 3); octx.lineTo(s[0] + 4.5, s[1] + 3);
+        octx.closePath(); octx.fill();
+      } else {
+        octx.fillStyle = pl.t === "city" ? "#eef3ee" : "#5fd4c8";
+        octx.beginPath(); octx.arc(s[0], s[1], pl.t === "city" ? 2.6 : 2.1, 0, Math.PI * 2); octx.fill();
+        octx.strokeStyle = "rgba(4,18,31,0.8)"; octx.lineWidth = 1;
+        octx.beginPath(); octx.arc(s[0], s[1], pl.t === "city" ? 2.6 : 2.1, 0, Math.PI * 2); octx.stroke();
+      }
+      // text with halo
+      octx.textBaseline = "alphabetic";
+      octx.lineWidth = 3; octx.lineJoin = "round";
+      octx.strokeStyle = "rgba(4,18,31,0.85)";
+      octx.fillStyle = isPeak ? "#ffb3b3" : "#eef3ee";
+      octx.strokeText(pl.jp, s[0], s[1] - 18);
+      octx.fillText(pl.jp, s[0], s[1] - 18);
+      octx.font = "500 8px 'Avenir Next', sans-serif";
+      var en = pl.en.split("").join(" ");
+      octx.strokeStyle = "rgba(4,18,31,0.8)"; octx.lineWidth = 2.5;
+      octx.fillStyle = "#93aebd";
+      octx.strokeText(en, s[0], s[1] - 7.5);
+      octx.fillText(en, s[0], s[1] - 7.5);
+    }
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>

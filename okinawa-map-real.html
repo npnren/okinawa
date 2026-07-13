@@ -1,0 +1,131 @@
+<meta charset="utf-8">
+<title>沖縄 リアル3Dマップ — Hotels &amp; Beaches</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root {
+    --panel: rgba(7, 24, 40, 0.88);
+    --line: rgba(126, 214, 206, 0.18);
+    --text: #eef3ee;
+    --muted: #93aebd;
+    --reef: #5fd4c8;
+    --coral: #ff6b6b;
+    --font-jp: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", sans-serif;
+    --font-display: "Avenir Next Condensed", "Avenir Next", "Helvetica Neue", var(--font-jp);
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { font-family: var(--font-jp); background: #04121f; }
+  #map { position: fixed; inset: 0; }
+
+  .panel {
+    position: fixed; top: 14px; left: 14px; z-index: 10; width: 252px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 14px 16px 13px; color: var(--text);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 12px 40px rgba(0, 6, 12, 0.45);
+  }
+  .eyebrow { font-family: var(--font-display); font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--reef); margin-bottom: 6px; }
+  h1 { margin: 0; font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: 0.04em; }
+  h1 small { display: block; font-family: var(--font-jp); font-size: 11px; font-weight: 600; letter-spacing: 0.18em; color: var(--muted); margin-top: 5px; }
+  .tip { margin: 10px 0 0; font-size: 10.5px; color: var(--muted); line-height: 1.7; }
+  .tip b { color: var(--text); font-weight: 600; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+  .chips button {
+    font-family: var(--font-jp); font-size: 11px; color: var(--text); cursor: pointer;
+    background: rgba(95, 212, 200, 0.08); border: 1px solid rgba(126, 214, 206, 0.32);
+    border-radius: 999px; padding: 5px 11px; transition: background 0.15s;
+  }
+  .chips button:hover { background: rgba(95, 212, 200, 0.2); }
+  .chips button:focus-visible { outline: 2px solid var(--reef); outline-offset: 2px; }
+  .chips button.home { border-color: rgba(255, 107, 107, 0.45); background: rgba(255, 107, 107, 0.08); }
+  .chips button.home:hover { background: rgba(255, 107, 107, 0.2); }
+
+  @media (max-width: 640px) { .panel { width: auto; right: 14px; } }
+</style>
+
+<div id="map"></div>
+
+<div class="panel">
+  <div class="eyebrow">OpenStreetMap · Live Terrain</div>
+  <h1>OKINAWA<small>リアル 3D マップ</small></h1>
+  <p class="tip">
+    <b>ズームインするとホテル・ビーチ・道路名</b>が表示されます（ズーム15以上）。<br>
+    ダブルクリック：素早くズーム<br>
+    右ドラッグ / Ctrl+ドラッグ：視点回転
+  </p>
+  <div class="chips" id="chips"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var map = new maplibregl.Map({
+    container: "map",
+    hash: true,
+    center: [127.90, 26.48],
+    zoom: 9,
+    pitch: 55,
+    bearing: -15,
+    maxPitch: 72,
+    style: {
+      version: 8,
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors | 標高: Mapzen/AWS Terrain Tiles"
+        },
+        dem: {
+          type: "raster-dem",
+          encoding: "terrarium",
+          tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          maxzoom: 15
+        }
+      },
+      layers: [
+        { id: "bg", type: "background", paint: { "background-color": "#0b2b47" } },
+        { id: "osm", type: "raster", source: "osm", paint: { "raster-fade-duration": 150 } }
+      ]
+    }
+  });
+
+  window.__map = map;
+  map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+  map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+  map.on("load", function () {
+    map.setTerrain({ source: "dem", exaggeration: 1.4 });
+    map.addControl(new maplibregl.TerrainControl({ source: "dem", exaggeration: 1.4 }), "top-right");
+  });
+
+  // quick-jump spots: resort / beach areas where hotel & beach detail is dense
+  var SPOTS = [
+    { jp: "全体を見る", c: [127.90, 26.48], z: 9, p: 55, b: -15, home: true },
+    { jp: "恩納リゾート帯", c: [127.868, 26.503], z: 14.6, p: 62, b: -25 },
+    { jp: "那覇・国際通り", c: [127.690, 26.215], z: 15.4, p: 55, b: 0 },
+    { jp: "北谷アメリカンビレッジ", c: [127.756, 26.316], z: 15.2, p: 58, b: -10 },
+    { jp: "美ら海水族館", c: [127.878, 26.694], z: 15.0, p: 60, b: 20 },
+    { jp: "瀬底ビーチ", c: [127.853, 26.647], z: 15.2, p: 58, b: 0 },
+    { jp: "残波岬・ニライビーチ", c: [127.716, 26.437], z: 14.8, p: 58, b: -20 },
+    { jp: "古宇利島", c: [128.019, 26.708], z: 14.6, p: 60, b: 10 }
+  ];
+  var chips = document.getElementById("chips");
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  SPOTS.forEach(function (s) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = s.jp;
+    if (s.home) b.className = "home";
+    b.addEventListener("click", function () {
+      var view = { center: s.c, zoom: s.z, pitch: s.p, bearing: s.b };
+      if (reduced) map.jumpTo(view);
+      else map.flyTo(Object.assign({ duration: 2200, essential: true }, view));
+    });
+    chips.appendChild(b);
+  });
+})();
+</script>
