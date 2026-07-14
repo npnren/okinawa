@@ -1,1637 +1,954 @@
 <!doctype html>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>沖縄 リアル3Dマップ — 旅程プランナー</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>沖縄 3D ワールド</title>
 <style>
-  :root {
-    --panel: rgba(7, 24, 40, 0.88);
-    --line: rgba(126, 214, 206, 0.18);
-    --text: #eef3ee;
-    --muted: #93aebd;
-    --reef: #5fd4c8;
-    --coral: #ff6b6b;
-    --font-jp: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", sans-serif;
-    --font-display: "Avenir Next Condensed", "Avenir Next", "Helvetica Neue", var(--font-jp);
-  }
-  html, body { margin: 0; height: 100%; overflow: hidden; -webkit-text-size-adjust: 100%; }
-  body { font-family: var(--font-jp); background: #04121f; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; }
-  #map { position: fixed; inset: 0; transition: filter 1.2s ease; }
-  #map.wx-rain { filter: brightness(0.8) saturate(0.7) contrast(1.03); }
-  #map.wx-sun { filter: brightness(1.04) saturate(1.1); }
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-text-size-adjust: 100%; }
+  html, body { height: 100%; overflow: hidden; background: #0b1020; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
 
-  /* ---- rooftop building-name labels ---- */
-  #bldNames { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 5; }
-  .bname {
-    position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
-    display: inline-flex; align-items: center; gap: 4px;
-    font-size: 10.5px; color: var(--text); background: rgba(7, 24, 40, 0.82);
-    border: 1px solid rgba(126, 214, 206, 0.4); border-radius: 3px; padding: 2px 7px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  /* ---- loading ---- */
+  #load {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; background: radial-gradient(circle at 50% 35%, #16233f 0%, #0b1020 70%);
+    color: #e8eefc; transition: opacity .6s ease;
   }
-  .bname .pic { font-size: 13px; line-height: 1; }
-  .bname::after {
-    content: ""; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
-    border: 4px solid transparent; border-top-color: rgba(126, 214, 206, 0.55);
+  #load.hide { opacity: 0; pointer-events: none; }
+  #load .ring {
+    width: 54px; height: 54px; border-radius: 50%;
+    border: 4px solid rgba(255,255,255,.15); border-top-color: #59b0ff;
+    animation: spin 1s linear infinite;
   }
-  /* near view: vertical signboard hanging down the facade, like real 看板 */
-  .bname.vert {
-    transform: translate(-50%, 0); flex-direction: column; gap: 3px;
-    padding: 5px 3px 7px; border-color: rgba(126, 214, 206, 0.55); border-radius: 4px;
-    background: linear-gradient(180deg, rgba(7, 24, 40, 0.92), rgba(7, 24, 40, 0.7));
-  }
-  .bname.vert::after { display: none; }
-  .bname.vert .pic { font-size: 15px; }
-  .bname.vert .tx {
-    writing-mode: vertical-rl; text-orientation: upright;
-    letter-spacing: 0.12em; font-size: 11.5px; overflow: hidden;
-  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #load h1 { font-size: 18px; font-weight: 700; letter-spacing: .06em; }
+  #load #lmsg { font-size: 13px; opacity: .7; min-height: 18px; }
 
-  /* ---- drive scene: cars / pedestrians / traffic signals ---- */
-  #driveScene { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; }
-  .actor {
-    position: absolute; left: 0; top: 0; line-height: 1; will-change: transform;
-    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed; left: 12px; top: 12px; z-index: 20;
+    display: flex; flex-direction: column; gap: 8px; max-width: min(92vw, 320px);
   }
-  .tsignal {
-    position: absolute; transform: translate(-50%, -100%); pointer-events: none;
-    display: flex; flex-direction: column; align-items: center;
+  .panel {
+    background: rgba(14,22,40,.82); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 14px;
+    padding: 10px 12px; color: #eaf0fb; box-shadow: 0 8px 30px rgba(0,0,0,.35);
   }
-  .tsignal .box {
-    display: flex; gap: 2px; background: #20262c; border: 1px solid #11151a;
-    border-radius: 3px; padding: 2px 3px; transform-origin: bottom center;
+  #title { font-size: 14px; font-weight: 700; letter-spacing: .04em; display: flex; align-items: center; gap: 8px; }
+  #title small { font-weight: 400; opacity: .6; font-size: 11px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  button.chip {
+    appearance: none; border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.06); color: #dbe6fb;
+    border-radius: 999px; padding: 6px 11px; font-size: 12px; cursor: pointer;
+    transition: background .15s, border-color .15s, transform .05s; white-space: nowrap;
   }
-  .tsignal .l { width: 8px; height: 8px; border-radius: 50%; background: #39424c; }
-  .tsignal.g .l.g { background: #37e57a; box-shadow: 0 0 7px #37e57a; }
-  .tsignal.y .l.y { background: #ffd23f; box-shadow: 0 0 7px #ffd23f; }
-  .tsignal.r .l.r { background: #ff5045; box-shadow: 0 0 8px #ff5045; }
-  .tsignal .pole { width: 2px; background: rgba(30, 34, 40, 0.85); }
-  #sigOverlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 4; }
+  button.chip:hover { background: rgba(89,176,255,.22); border-color: rgba(89,176,255,.5); }
+  button.chip:active { transform: translateY(1px); }
+  button.chip.on { background: #2f7fe0; border-color: #58a6ff; color: #fff; }
+  #stats { font-size: 11px; opacity: .72; margin-top: 8px; line-height: 1.5; }
 
-  /* ---- weather sky effects: sun / clouds / rain ---- */
-  #sunGlow {
-    position: absolute; width: 230px; height: 230px; border-radius: 50%;
-    pointer-events: none; z-index: 2; display: none; mix-blend-mode: screen;
-    transform: translate(-50%, -50%);
-    background: radial-gradient(circle,
-      rgba(255, 253, 235, 0.95) 0%, rgba(255, 238, 160, 0.6) 20%,
-      rgba(255, 212, 95, 0.22) 45%, transparent 68%);
+  #help {
+    position: fixed; right: 12px; bottom: 12px; z-index: 20;
+    font-size: 11px; line-height: 1.7; text-align: right; color: #cdd8ee;
+    text-shadow: 0 1px 4px rgba(0,0,0,.6); pointer-events: none;
   }
-  #cloudFx {
-    position: absolute; left: 0; right: 0; height: 170px; pointer-events: none;
-    z-index: 2; display: none; filter: blur(5px);
-    background-repeat: repeat-x; background-size: 1000px 170px;
-  }
-  #cloudFx.sun { opacity: 0.8; background-image:
-    radial-gradient(150px 40px at 140px 110px, rgba(255,255,255,0.9), transparent 70%),
-    radial-gradient(190px 48px at 430px 70px, rgba(255,255,255,0.75), transparent 70%),
-    radial-gradient(120px 34px at 760px 120px, rgba(255,255,255,0.85), transparent 70%); }
-  #cloudFx.cloudy { opacity: 0.95; background-image:
-    radial-gradient(240px 60px at 160px 90px, rgba(226,232,238,0.95), transparent 72%),
-    radial-gradient(280px 70px at 480px 110px, rgba(208,216,224,0.9), transparent 72%),
-    radial-gradient(230px 56px at 800px 80px, rgba(220,226,232,0.9), transparent 72%),
-    radial-gradient(200px 50px at 950px 130px, rgba(200,210,218,0.85), transparent 72%); }
-  #cloudFx.rain { opacity: 1; background-image:
-    radial-gradient(260px 64px at 150px 90px, rgba(105,115,126,0.95), transparent 72%),
-    radial-gradient(300px 76px at 470px 110px, rgba(88,98,108,0.92), transparent 72%),
-    radial-gradient(250px 60px at 790px 84px, rgba(112,122,132,0.9), transparent 72%),
-    radial-gradient(220px 54px at 960px 128px, rgba(80,90,100,0.9), transparent 72%); }
-  #rainFx {
-    position: absolute; inset: 0; pointer-events: none; z-index: 6; display: none; opacity: 0.55;
-    background-image: linear-gradient(103deg, transparent 44%, rgba(214,232,246,0.4) 50%, transparent 56%);
-    background-size: 13px 64px;
-    animation: rainfall 0.38s linear infinite;
-  }
-  @keyframes rainfall { from { background-position: 0 0; } to { background-position: -14px 64px; } }
+  #help b { color: #7fc0ff; }
 
-  /* ---- planner panel ---- */
-  .r-panel {
-    position: fixed; top: 14px; left: 14px; z-index: 10; width: 280px;
-    max-height: calc(100vh - 28px); overflow-y: auto;
-    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
-    padding: 12px 16px 13px; color: var(--text);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    box-shadow: 0 12px 40px rgba(0, 6, 12, 0.45);
+  #compass {
+    position: fixed; right: 14px; top: 14px; z-index: 20;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(14,22,40,.8); border: 1px solid rgba(255,255,255,.14);
+    display: flex; align-items: center; justify-content: center; pointer-events: none;
   }
-  .r-head { display: flex; align-items: center; gap: 8px; }
-  .r-title { font-family: var(--font-display); font-size: 19px; font-weight: 700; letter-spacing: 0.04em; line-height: 1.1; }
-  .r-title small { display: block; font-family: var(--font-jp); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em; color: var(--muted); margin-top: 3px; }
-  .hd-wx { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .hd-ride { display: flex; align-items: center; gap: 5px; }
-  .hd-ride[hidden] { display: none; }
-  .hd-ride #rideInfo2 { font-size: 9.5px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .hd-ride button {
-    width: 26px; height: 26px; padding: 0; cursor: pointer; border-radius: 3px;
-    font-size: 11px; color: var(--text); line-height: 1;
-    background: rgba(255, 107, 107, 0.14); border: 1px solid rgba(255, 107, 107, 0.5);
-  }
-  .hd-ride button:hover { background: rgba(255, 107, 107, 0.28); }
-  #foldBtn {
-    flex: none; width: 28px; height: 28px; padding: 0; cursor: pointer; border-radius: 3px;
-    font-size: 12px; color: var(--muted); background: transparent;
-    border: 1px solid rgba(126, 214, 206, 0.3);
-  }
-  #foldBtn:hover { color: var(--text); background: rgba(95, 212, 200, 0.12); }
-  .hd-wx:empty { display: none; }
-  .r-head .hd-wx + .hd-ride:not([hidden]) ~ #foldBtn { margin-left: 0; }
-  .r-panel.folded .r-body { display: none; }
+  #compass .needle { width: 4px; height: 34px; position: relative; transform-origin: 50% 50%; }
+  #compass .needle::before { content:""; position:absolute; top:0; left:0; width:4px; height:17px; background:#ff5a5a; border-radius:2px; }
+  #compass .needle::after  { content:""; position:absolute; bottom:0; left:0; width:4px; height:17px; background:#dfe7f5; border-radius:2px; }
+  #compass span { position:absolute; top:2px; font-size:9px; color:#ff8f8f; font-weight:700; }
 
-  .r-eyebrow { font-family: var(--font-display); font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--reef); margin-top: 10px; }
-  #real-fail { display: none; margin-top: 10px; font-size: 11px; color: #ffb3b3; line-height: 1.7; }
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    z-index: 30; background: rgba(20,30,52,.94); color: #eef4ff;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
+    padding: 9px 15px; font-size: 12.5px; opacity: 0; transition: opacity .3s;
+    pointer-events: none; max-width: 88vw; text-align: center;
+  }
+  .toast.show { opacity: 1; }
 
-  .r-search { position: relative; display: flex; gap: 6px; margin-top: 8px; }
-  .r-search input {
-    flex: 1; min-width: 0; font-family: var(--font-jp); font-size: 12px; color: var(--text);
-    background: rgba(10, 34, 54, 0.9); border: 1px solid rgba(126, 214, 206, 0.35);
-    border-radius: 3px; padding: 7px 9px; outline: none;
-  }
-  .r-search input:focus-visible { border-color: var(--reef); }
-  .r-search input::placeholder { color: #5f7889; }
-  .r-search button {
-    font-family: var(--font-jp); font-size: 12px; font-weight: 600; color: #071826; cursor: pointer;
-    background: var(--reef); border: none; border-radius: 3px; padding: 7px 13px; white-space: nowrap;
-  }
-  .r-search button:hover { background: #7fe3d8; }
-  .r-search button:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
-  .r-sug {
-    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 40;
-    background: #0a2236; border: 1px solid var(--line); border-radius: 4px;
-    max-height: 190px; overflow-y: auto; box-shadow: 0 10px 30px rgba(0, 6, 12, 0.6);
-  }
-  .r-sug:empty { display: none; }
-  .r-sug button {
-    display: block; width: 100%; text-align: left; cursor: pointer;
-    font-family: var(--font-jp); font-size: 11.5px; color: var(--text);
-    background: transparent; border: none; border-bottom: 1px solid rgba(126, 214, 206, 0.08);
-    padding: 7px 10px;
-  }
-  .r-sug button:hover, .r-sug button.sel { background: rgba(95, 212, 200, 0.14); }
-  .r-sug .k { display: block; font-size: 9px; color: var(--muted); margin-top: 2px; letter-spacing: 0.05em; }
-  .r-note { margin-top: 6px; font-size: 9px; color: #5f7889; line-height: 1.5; }
-
-  .r-wx {
-    display: flex; align-items: center; gap: 9px; margin-top: 11px;
-    background: rgba(10, 34, 54, 0.65); border: 1px solid var(--line);
-    border-radius: 4px; padding: 7px 10px;
-  }
-  .r-wx .ic { font-size: 21px; line-height: 1; flex: none; }
-  .r-wx .tx { min-width: 0; }
-  .r-wx .tx b { display: block; font-size: 11.5px; font-weight: 600; letter-spacing: 0.03em; }
-  .r-wx .tx span { display: block; font-size: 9px; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
-  .r-wx .rd { margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); cursor: pointer; }
-  .r-wx .rd input { accent-color: #2c7d8a; width: 13px; height: 13px; cursor: pointer; }
-  .stop-row .wxs { flex: none; font-size: 10px; color: var(--muted); min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
-
-  .r-itin { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .r-itin-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; }
-  .r-itin-head .sum { font-family: var(--font-display); font-size: 11px; color: var(--reef); font-variant-numeric: tabular-nums; letter-spacing: 0.05em; font-weight: 600; }
-  .r-mode { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
-  .r-mode .m {
-    font-family: var(--font-jp); font-size: 10.5px; color: var(--muted); cursor: pointer;
-    background: transparent; border: 1px solid rgba(126, 214, 206, 0.25); border-radius: 999px;
-    padding: 3px 12px; transition: background 0.15s, color 0.15s;
-  }
-  .r-mode .m:hover { color: var(--text); }
-  .r-mode .m.active { color: var(--text); background: rgba(95, 212, 200, 0.16); border-color: rgba(126, 214, 206, 0.5); }
-  .r-mode .bld { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--muted); cursor: pointer; }
-  .r-mode .bld input { accent-color: #2c7d8a; width: 13px; height: 13px; cursor: pointer; }
-  #stops { list-style: none; margin: 8px 0 0; padding: 0; }
-  #stops li { margin: 0; }
-  .leg { font-size: 9.5px; color: var(--muted); padding: 3px 0 3px 28px; font-variant-numeric: tabular-nums; }
-  .stop-row { display: flex; align-items: center; gap: 7px; padding: 4px 0; }
-  .stop-no {
-    flex: none; width: 19px; height: 19px; border-radius: 50%; background: var(--coral);
-    color: #fff; font-family: var(--font-display); font-size: 11px; font-weight: 700;
-    text-align: center; line-height: 19px;
-  }
-  .stop-name { flex: 1; min-width: 0; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .stop-row .op {
-    flex: none; width: 18px; height: 18px; padding: 0; cursor: pointer; border-radius: 3px;
-    background: transparent; border: 1px solid rgba(126, 214, 206, 0.25);
-    color: var(--muted); font-size: 10px; line-height: 16px;
-  }
-  .stop-row .op:hover { background: rgba(95, 212, 200, 0.15); color: var(--text); }
-  .stop-row .op:disabled { opacity: 0.25; cursor: default; }
-  .r-drive { display: flex; gap: 6px; margin-top: 9px; }
-  .r-drive button {
-    font-family: var(--font-jp); font-size: 12px; font-weight: 600; cursor: pointer;
-    border-radius: 3px; padding: 7px 0; letter-spacing: 0.08em; transition: background 0.15s;
-  }
-  #playBtn {
-    flex: 1; color: var(--text); background: rgba(255, 107, 107, 0.14);
-    border: 1px solid rgba(255, 107, 107, 0.5);
-  }
-  #playBtn:hover:enabled { background: rgba(255, 107, 107, 0.28); }
-  #stopBtn {
-    width: 72px; color: var(--muted); background: transparent;
-    border: 1px solid rgba(126, 214, 206, 0.3);
-  }
-  #stopBtn:hover:enabled { background: rgba(95, 212, 200, 0.12); color: var(--text); }
-  .r-drive button:disabled { opacity: 0.35; cursor: default; }
-  .r-drive button:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
-  .r-spd { display: flex; align-items: center; gap: 4px; margin-top: 7px; font-size: 10px; color: var(--muted); }
-  .r-spd .s {
-    font-family: var(--font-jp); font-size: 10px; color: var(--muted); cursor: pointer;
-    background: transparent; border: 1px solid rgba(126, 214, 206, 0.25); border-radius: 999px;
-    padding: 2px 9px; font-variant-numeric: tabular-nums;
-  }
-  .r-spd .s:hover { color: var(--text); }
-  .r-spd .s.active { color: var(--text); background: rgba(95, 212, 200, 0.16); border-color: rgba(126, 214, 206, 0.5); }
-  #rideInfo { margin-left: auto; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
-  #routeMsg { font-size: 10px; color: #ffb3b3; margin-top: 5px; min-height: 1em; }
-  .r-empty { font-size: 10px; color: #5f7889; margin-top: 6px; line-height: 1.6; }
-
-  .r-mark {
-    width: 24px; height: 24px; border-radius: 50%; background: var(--coral);
-    color: #fff; font-family: var(--font-display); font-size: 12px; font-weight: 700;
-    text-align: center; line-height: 22px; border: 2px solid #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45); cursor: default;
-  }
-
-  .r-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .r-chips button {
-    font-family: var(--font-jp); font-size: 10.5px; color: var(--text); cursor: pointer;
-    background: rgba(95, 212, 200, 0.08); border: 1px solid rgba(126, 214, 206, 0.32);
-    border-radius: 999px; padding: 4px 10px; transition: background 0.15s;
-  }
-  .r-chips button:hover { background: rgba(95, 212, 200, 0.2); }
-  .r-chips button:focus-visible { outline: 2px solid var(--reef); outline-offset: 2px; }
-  .r-chips button.home { border-color: rgba(255, 107, 107, 0.45); background: rgba(255, 107, 107, 0.08); }
-  .r-chips button.home:hover { background: rgba(255, 107, 107, 0.2); }
-
-  /* ---- mobile: fold-able bottom sheet ---- */
-  @media (max-width: 640px) {
-    .r-panel {
-      top: auto; bottom: 0; left: 0; right: 0; width: auto;
-      max-height: 62vh; max-height: 62dvh; /* dvh: iOS Safariのツールバーを除いた実表示領域 */
-      border-radius: 10px 10px 0 0; border-bottom: none;
-      padding: 9px 14px calc(10px + env(safe-area-inset-bottom));
-    }
-    .r-title { font-size: 17px; }
-    .r-search input { font-size: 16px; padding: 9px 10px; } /* 16px: iOSの自動ズーム防止 */
-    .r-search button { padding: 9px 15px; font-size: 13px; }
-    .stop-row { padding: 6px 0; }
-    .stop-row .op { width: 24px; height: 24px; font-size: 12px; line-height: 22px; }
-    .r-mode .m { padding: 5px 14px; }
-    .r-drive button { padding: 10px 0; }
-    .r-spd .s { padding: 4px 11px; }
-    .r-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; -webkit-overflow-scrolling: touch; }
-    .r-chips button { flex: none; padding: 6px 12px; }
-    #foldBtn { width: 34px; height: 34px; font-size: 14px; }
-    .hd-ride button { width: 32px; height: 32px; font-size: 13px; }
-    .maplibregl-ctrl-bottom-left { bottom: 62vh; bottom: 62dvh; }
-    body.sheet-folded .maplibregl-ctrl-bottom-left { bottom: 64px; }
+  @media (max-width: 560px) {
+    #help { display: none; }
+    #hud { max-width: 78vw; }
   }
 </style>
+</head>
+<body>
+<div id="app"></div>
 
-<div id="map"></div>
+<div id="load">
+  <div class="ring"></div>
+  <h1>沖縄 3D ワールド</h1>
+  <div id="lmsg">起動中…</div>
+</div>
 
-<div class="r-panel" id="panel">
-  <div class="r-head">
-    <div class="r-title">OKINAWA<small>旅程プランナー</small></div>
-    <span class="hd-wx" id="wxMini"></span>
-    <span class="hd-ride" id="hdRide" hidden>
-      <span id="rideInfo2"></span>
-      <button id="playBtn2" type="button" aria-label="一時停止 / 再開">⏸</button>
-      <button id="stopBtn2" type="button" aria-label="走行ビュー終了">■</button>
-    </span>
-    <button id="foldBtn" type="button" aria-label="メニューを折りたたむ" aria-expanded="true">▾</button>
-  </div>
-
-  <div class="r-body">
-    <div id="real-fail">地図ライブラリを読み込めませんでした。インターネット接続のある環境でご利用ください。</div>
-
-    <div class="r-search">
-      <input id="q" type="search" placeholder="ホテル・ビーチ名などで検索" autocomplete="off" aria-label="スポット検索">
-      <button id="addBtn" type="button">追加</button>
-      <div class="r-sug" id="sug"></div>
+<div id="hud">
+  <div class="panel">
+    <div id="title">🌏 沖縄 3D ワールド <small>OSM · Three.js</small></div>
+    <div class="row" id="locrow"></div>
+    <div class="row">
+      <button class="chip on" id="mOrbit">🛰 上空ビュー</button>
+      <button class="chip" id="mWalk">🚶 歩行ビュー</button>
     </div>
-    <div class="r-note">あいまい検索対応（例：万座 / ビーチ / ハレクラニ / 美ら海水族館）。候補をクリックか「追加」で旅程に入ります。</div>
-
-    <div class="r-wx">
-      <span class="ic" id="wxIcon">…</span>
-      <div class="tx"><b id="wxMain">天気を取得中…</b><span id="wxSub"></span></div>
-      <label class="rd"><input type="checkbox" id="radar" checked> 雨雲</label>
+    <div class="row">
+      <button class="chip on" id="tShadow">影</button>
+      <button class="chip on" id="tCars">車</button>
+      <button class="chip on" id="tSign">看板</button>
+      <button class="chip" id="tWire">枠線</button>
     </div>
-
-    <div class="r-itin">
-      <div class="r-itin-head">旅程<span class="sum" id="routeSum"></span></div>
-      <div class="r-mode">
-        <button type="button" class="m active" id="modeCar">車</button>
-        <button type="button" class="m" id="modeFoot">徒歩</button>
-        <label class="bld"><input type="checkbox" id="bld" checked> 3D建物</label>
-      </div>
-      <ol id="stops"></ol>
-      <div class="r-empty" id="emptyMsg">スポットを2つ以上追加すると、ルートと所要時間を自動計算します。</div>
-      <div class="r-drive">
-        <button id="playBtn" type="button" disabled>▶ 走行ビュー 開始</button>
-        <button id="stopBtn" type="button" disabled>■ 終了</button>
-      </div>
-      <div class="r-spd">速度
-        <button type="button" class="s active" data-s="1">×1</button>
-        <button type="button" class="s" data-s="2">×2</button>
-        <button type="button" class="s" data-s="4">×4</button>
-        <span id="rideInfo"></span>
-      </div>
-      <div id="routeMsg" role="status"></div>
-    </div>
-
-    <div class="r-chips" id="chips"></div>
-    <div class="r-note">検索: Nominatim + Photon / ルート: OSRM (FOSSGIS) / 建物・名称: OpenFreeMap / 車線・信号: OSM Overpass / 天気: Open-Meteo / 雨雲: RainViewer（所要時間・天気は目安）</div>
+    <div id="stats">読み込み中…</div>
   </div>
 </div>
 
-<script>
-(function () {
-  "use strict";
-  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var mqMobile = window.matchMedia("(max-width: 640px)");
-  var realMap = null;
+<div id="compass"><div class="needle" id="needle"></div><span>N</span></div>
 
-  /* ============ map init ============ */
-  if (typeof maplibregl === "undefined") {
-    document.getElementById("real-fail").style.display = "block";
-  } else {
-    realMap = new maplibregl.Map({
-      container: "map",
-      center: [127.90, 26.48],
-      zoom: 9,
-      pitch: 55,
-      bearing: -15,
-      maxPitch: 85,
-      maxZoom: 22.5,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: "raster",
-            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            maxzoom: 19,
-            attribution: "© <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap</a> contributors | 標高: Mapzen/AWS | ルート: OSRM | 建物: OpenFreeMap"
-          },
-          dem: {
-            type: "raster-dem",
-            encoding: "terrarium",
-            tiles: ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            maxzoom: 15
-          },
-          ofm: { type: "vector", url: "https://tiles.openfreemap.org/planet" }
-        },
-        layers: [
-          { id: "bg", type: "background", paint: { "background-color": "#0b2b47" } },
-          { id: "osm", type: "raster", source: "osm", paint: { "raster-fade-duration": 150 } }
-        ]
-      }
-    });
-    window.__map = realMap;
-    realMap.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
-    realMap.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-    realMap.on("load", function () {
-      realMap.setTerrain({ source: "dem", exaggeration: 1.4 });
-      realMap.addControl(new maplibregl.TerrainControl({ source: "dem", exaggeration: 1.4 }), "top-right");
-      realMap.addLayer({
-        id: "bld3d",
-        type: "fill-extrusion",
-        source: "ofm",
-        "source-layer": "building",
-        minzoom: 14,
-        paint: {
-          "fill-extrusion-color": ["interpolate", ["linear"],
-            ["coalesce", ["get", "render_height"], 8],
-            0, "#e6dfd1", 25, "#d3c9b6", 70, "#bbb09b"],
-          "fill-extrusion-height": ["coalesce", ["get", "render_height"], 8],
-          "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-          "fill-extrusion-opacity": 0.95,
-          "fill-extrusion-vertical-gradient": true
-        }
-      });
-      realMap.addSource("route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-      realMap.addLayer({
-        id: "route-line",
-        type: "line",
-        source: "route",
-        layout: { "line-cap": "round", "line-join": "round" },
-        paint: { "line-color": "#ff6b6b", "line-width": 4.5, "line-opacity": 0.9 }
-      });
-      // facade texture used during the drive view: window grid, a few lit
-      var pc = document.createElement("canvas");
-      pc.width = pc.height = 32;
-      var pg = pc.getContext("2d");
-      pg.fillStyle = "#d8cfbd"; pg.fillRect(0, 0, 32, 32);
-      for (var wy = 3; wy < 30; wy += 8) {
-        for (var wx = 3; wx < 30; wx += 8) {
-          pg.fillStyle = Math.random() < 0.22 ? "#f3e2a0" : "#47525e";
-          pg.fillRect(wx, wy, 4, 5);
-        }
-      }
-      realMap.addImage("bld-windows", pg.getImageData(0, 0, 32, 32), { pixelRatio: 2 });
-      applyBld();
-      fetchRoute(); // in case stops were queued before load
-      refreshCenterWx();
-      updateRadar();
-      updateLabels();
-      applySky(wxKind === null ? "" : wxKind); // neutral sky until the first forecast lands
-    });
-    realMap.on("move", function () { updateSkyPos(); });
-    realMap.on("dragstart", function () { stopDrive(false); });
-    // iOS Safari: the viewport changes size on toolbar collapse / rotation and
-    // the ResizeObserver alone can miss it — resize the canvas explicitly.
-    var rszTimer = null;
-    function kickResize() {
-      clearTimeout(rszTimer);
-      rszTimer = setTimeout(function () { if (realMap) realMap.resize(); }, 120);
-    }
-    window.addEventListener("resize", kickResize);
-    window.addEventListener("orientationchange", kickResize);
-    if (window.visualViewport) window.visualViewport.addEventListener("resize", kickResize);
-    document.addEventListener("visibilitychange", function () {
-      if (!document.hidden) kickResize();
-    });
-    var wxMoveTimer = null;
-    realMap.on("moveend", function () {
-      clearTimeout(wxMoveTimer);
-      wxMoveTimer = setTimeout(refreshCenterWx, 2500);
-      fetchViewportSignals();
-    });
+<div id="help">
+  <div><b>上空:</b> ドラッグ=回転 / ホイール=ズーム / 右ドラッグ=移動</div>
+  <div><b>歩行:</b> クリックで開始 · <b>WASD</b> 移動 · マウス=視線 · <b>Shift</b> 走る · <b>Esc</b> 終了</div>
+</div>
 
-    var SPOTS = [
-      { jp: "全体を見る", c: [127.90, 26.48], z: 9, p: 55, b: -15, home: true },
-      { jp: "恩納リゾート帯", c: [127.868, 26.503], z: 14.6, p: 62, b: -25 },
-      { jp: "那覇・国際通り", c: [127.690, 26.215], z: 15.4, p: 55, b: 0 },
-      { jp: "北谷アメリカンビレッジ", c: [127.756, 26.316], z: 15.2, p: 58, b: -10 },
-      { jp: "美ら海水族館", c: [127.878, 26.694], z: 15.0, p: 60, b: 20 },
-      { jp: "瀬底ビーチ", c: [127.853, 26.647], z: 15.2, p: 58, b: 0 },
-      { jp: "残波岬・ニライビーチ", c: [127.716, 26.437], z: 14.8, p: 58, b: -20 },
-      { jp: "古宇利島", c: [128.019, 26.708], z: 14.6, p: 60, b: 10 }
-    ];
-    var chips = document.getElementById("chips");
-    SPOTS.forEach(function (s) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.textContent = s.jp;
-      if (s.home) b.className = "home";
-      b.addEventListener("click", function () {
-        stopDrive(false);
-        var view = { center: s.c, zoom: s.z, pitch: s.p, bearing: s.b };
-        if (reducedMotion) realMap.jumpTo(view);
-        else realMap.flyTo(Object.assign({ duration: 2200, essential: true }, view));
-      });
-      chips.appendChild(b);
-    });
+<div class="toast" id="toast"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
   }
-
-  /* ============ fold-able panel (mobile bottom sheet) ============ */
-  var panel = document.getElementById("panel");
-  var foldBtn = document.getElementById("foldBtn");
-  var autoFolded = false;
-  function setFold(f) {
-    panel.classList.toggle("folded", f);
-    document.body.classList.toggle("sheet-folded", f);
-    foldBtn.textContent = f ? "▴" : "▾";
-    foldBtn.setAttribute("aria-expanded", f ? "false" : "true");
-    foldBtn.setAttribute("aria-label", f ? "メニューを開く" : "メニューを折りたたむ");
-  }
-  foldBtn.addEventListener("click", function () {
-    autoFolded = false;
-    setFold(!panel.classList.contains("folded"));
-  });
-  if (mqMobile.matches) setFold(true); // phones: start with the map, menu one tap away
-
-  function fitPad() {
-    return mqMobile.matches
-      ? { top: 70, right: 40, bottom: Math.round(window.innerHeight * 0.5), left: 40 }
-      : { top: 90, right: 90, bottom: 90, left: 320 };
-  }
-
-  /* ============ trip planner state ============ */
-  var stops = [];           // {name, lon, lat, wx}
-  var markers = [];
-  var routeLegs = null;
-  var lastGeom = null;      // route geometry coordinates [[lon,lat],...]
-  var sugResults = [];
-  var sugTimer = null;
-  var pendingAdd = false;
-  window.__stops = stops;
-
-  var MODES = {
-    // eyeH: camera height above the street (m), kmps: ride speed at x1 (km/s)
-    car:  { url: "https://routing.openstreetmap.de/routed-car/route/v1/driving/",  label: "車で",  eyeH: 4,   look: 0.10, kmps: 0.020 },
-    foot: { url: "https://routing.openstreetmap.de/routed-foot/route/v1/foot/",    label: "徒歩", eyeH: 2.5, look: 0.05, kmps: 0.006 }
-  };
-  var travelMode = "car";
-
-  var JTYPE = {
-    hotel: "ホテル", guest_house: "ゲストハウス", hostel: "ホステル", motel: "モーテル",
-    beach: "ビーチ", beach_resort: "ビーチリゾート", resort: "リゾート",
-    attraction: "観光スポット", viewpoint: "展望スポット", aquarium: "水族館",
-    theme_park: "テーマパーク", museum: "博物館", castle: "城・グスク", monument: "史跡",
-    restaurant: "レストラン", cafe: "カフェ", fast_food: "軽食",
-    island: "島", islet: "小島", peak: "山", cape: "岬", park: "公園", garden: "庭園",
-    village: "集落", town: "町", city: "市", suburb: "地区", bay: "湾", marina: "マリーナ",
-    camp_site: "キャンプ場", zoo: "動物園", supermarket: "スーパー", mall: "モール"
-  };
-
-  function inOkinawa(s) { return s.lon > 126.5 && s.lon < 129.0 && s.lat > 25.7 && s.lat < 27.5; }
-
-  function photonSearch(q) {
-    var url = "https://photon.komoot.io/api/?q=" + encodeURIComponent(q) +
-              "&limit=8&lat=26.45&lon=127.9&bbox=126.7,25.8,128.6,27.2";
-    return fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-      return (d.features || []).map(function (f) {
-        var pr = f.properties || {};
-        return {
-          name: pr.name || pr.street || q,
-          kind: JTYPE[pr.osm_value] || pr.osm_value || "",
-          area: [pr.city || pr.county || pr.district, pr.state].filter(Boolean).join(" "),
-          lon: f.geometry.coordinates[0],
-          lat: f.geometry.coordinates[1]
-        };
-      }).filter(inOkinawa);
-    });
-  }
-
-  function nominatimSearch(q) {
-    var url = "https://nominatim.openstreetmap.org/search?q=" + encodeURIComponent(q) +
-              "&format=jsonv2&viewbox=126.7,27.2,128.6,25.8&bounded=1&limit=6" +
-              "&accept-language=ja&addressdetails=1";
-    return fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-      return (d || []).map(function (r2) {
-        var a = r2.address || {};
-        return {
-          name: (r2.display_name || q).split(",")[0],
-          kind: JTYPE[r2.type] || r2.type || "",
-          area: [a.city || a.town || a.village || a.county, a.province || a.state].filter(Boolean).join(" "),
-          lon: parseFloat(r2.lon),
-          lat: parseFloat(r2.lat)
-        };
-      }).filter(inOkinawa);
-    });
-  }
-
-  function searchSpots(q, thenAdd) {
-    Promise.allSettled([nominatimSearch(q), photonSearch(q)]).then(function (rs) {
-      var merged = [];
-      rs.forEach(function (r) {
-        if (r.status !== "fulfilled") return;
-        r.value.forEach(function (s) {
-          var dup = merged.some(function (m) {
-            return m.name === s.name ||
-                   (Math.abs(m.lon - s.lon) < 0.002 && Math.abs(m.lat - s.lat) < 0.002);
-          });
-          if (!dup) merged.push(s);
-        });
-      });
-      if (!rs.some(function (r) { return r.status === "fulfilled"; })) {
-        setMsg("検索サービスに接続できませんでした");
-        pendingAdd = false;
-        return;
-      }
-      sugResults = merged.slice(0, 8);
-      renderSug();
-      if (thenAdd && pendingAdd) {
-        pendingAdd = false;
-        if (sugResults.length) addStop(sugResults[0]);
-        else setMsg("「" + q + "」は沖縄周辺で見つかりませんでした");
-      }
-    });
-  }
-
-  function renderSug() {
-    var box = document.getElementById("sug");
-    box.innerHTML = "";
-    sugResults.forEach(function (s) {
-      var b = document.createElement("button");
-      b.type = "button";
-      var k = document.createElement("span");
-      b.textContent = s.name;
-      k.className = "k";
-      k.textContent = [s.kind, s.area].filter(Boolean).join(" · ");
-      b.appendChild(k);
-      b.addEventListener("click", function () { addStop(s); });
-      box.appendChild(b);
-    });
-  }
-
-  function clearSug() {
-    sugResults = [];
-    document.getElementById("sug").innerHTML = "";
-  }
-
-  function setMsg(m) { document.getElementById("routeMsg").textContent = m || ""; }
-
-  function addStop(s) {
-    stopDrive(false);
-    stops.push({ name: s.name, lon: s.lon, lat: s.lat });
-    document.getElementById("q").value = "";
-    clearSug();
-    setMsg("");
-    updateItinerary();
-    if (realMap) {
-      if (stops.length === 1) {
-        realMap.flyTo({ center: [s.lon, s.lat], zoom: 14.5, duration: 1600, essential: true });
-      } else {
-        realMap.fitBounds(boundsOf(stops), { padding: fitPad(), maxZoom: 15, duration: 1600 });
-      }
-    }
-  }
-
-  function boundsOf(list) {
-    var b = [[list[0].lon, list[0].lat], [list[0].lon, list[0].lat]];
-    list.forEach(function (s) {
-      b[0][0] = Math.min(b[0][0], s.lon); b[0][1] = Math.min(b[0][1], s.lat);
-      b[1][0] = Math.max(b[1][0], s.lon); b[1][1] = Math.max(b[1][1], s.lat);
-    });
-    return b;
-  }
-
-  function fmtDur(sec) {
-    var m = Math.round(sec / 60);
-    if (m >= 60) return Math.floor(m / 60) + "時間" + (m % 60) + "分";
-    return m + "分";
-  }
-  function fmtDist(m) { return (m / 1000).toFixed(1) + "km"; }
-
-  function updateItinerary() {
-    var ol = document.getElementById("stops");
-    ol.innerHTML = "";
-    stops.forEach(function (s, i) {
-      var li = document.createElement("li");
-      if (i > 0) {
-        var leg = document.createElement("div");
-        leg.className = "leg";
-        leg.textContent = (routeLegs && routeLegs[i - 1])
-          ? "↓ " + MODES[travelMode].label + " " + fmtDur(routeLegs[i - 1].duration) + "・" + fmtDist(routeLegs[i - 1].distance)
-          : "↓ 計算中…";
-        li.appendChild(leg);
-      }
-      var row = document.createElement("div");
-      row.className = "stop-row";
-      var no = document.createElement("span");
-      no.className = "stop-no"; no.textContent = i + 1;
-      var nm = document.createElement("span");
-      nm.className = "stop-name"; nm.textContent = s.name; nm.title = s.name;
-      var wx = document.createElement("span");
-      wx.className = "wxs"; wx.textContent = s.wx || "";
-      row.appendChild(no); row.appendChild(nm); row.appendChild(wx);
-      [["↑", i === 0, function () { swap(i, i - 1); }],
-       ["↓", i === stops.length - 1, function () { swap(i, i + 1); }],
-       ["×", false, function () { stopDrive(false); stops.splice(i, 1); routeLegs = null; updateItinerary(); }]
-      ].forEach(function (op) {
-        var b = document.createElement("button");
-        b.type = "button"; b.className = "op"; b.textContent = op[0]; b.disabled = op[1];
-        b.addEventListener("click", op[2]);
-        row.appendChild(b);
-      });
-      li.appendChild(row);
-      ol.appendChild(li);
-    });
-    document.getElementById("emptyMsg").style.display = stops.length >= 2 ? "none" : "block";
-    refreshMarkers();
-    fetchRoute();
-    refreshStopsWx();
-  }
-
-  function swap(a, b) {
-    stopDrive(false);
-    var tmp = stops[a]; stops[a] = stops[b]; stops[b] = tmp;
-    routeLegs = null;
-    updateItinerary();
-  }
-
-  function refreshMarkers() {
-    markers.forEach(function (m) { m.remove(); });
-    markers = [];
-    if (!realMap) return;
-    stops.forEach(function (s, i) {
-      var el = document.createElement("div");
-      el.className = "r-mark";
-      el.textContent = i + 1;
-      markers.push(new maplibregl.Marker({ element: el }).setLngLat([s.lon, s.lat]).addTo(realMap));
-    });
-  }
-
-  var routeSeq = 0;
-  function fetchRoute() {
-    var sum = document.getElementById("routeSum");
-    if (!realMap || stops.length < 2) {
-      routeLegs = null;
-      lastGeom = null;
-      laneSamples = null;
-      rideUI();
-      sum.textContent = "";
-      if (realMap && realMap.getSource("route")) {
-        realMap.getSource("route").setData({ type: "FeatureCollection", features: [] });
-      }
-      return;
-    }
-    var seq = ++routeSeq;
-    var coords = stops.map(function (s) { return s.lon + "," + s.lat; }).join(";");
-    var url = MODES[travelMode].url + coords + "?overview=full&geometries=geojson&steps=false";
-    sum.textContent = "計算中…";
-    fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-      if (seq !== routeSeq) return; // stale response
-      if (!d.routes || !d.routes.length) {
-        setMsg("ルートが見つかりませんでした（離島間は" + (travelMode === "car" ? "車" : "徒歩") + "ルート不可）");
-        sum.textContent = "";
-        routeLegs = null;
-        lastGeom = null;
-        laneSamples = null;
-        rideUI();
-        return;
-      }
-      var rt = d.routes[0];
-      routeLegs = rt.legs;
-      lastGeom = rt.geometry.coordinates;
-      rideUI();
-      fetchLanes(rt, seq);
-      sum.textContent = "合計 " + fmtDur(rt.duration) + "・" + fmtDist(rt.distance);
-      setMsg("");
-      if (realMap.getSource("route")) {
-        realMap.getSource("route").setData({ type: "Feature", properties: {}, geometry: rt.geometry });
-      }
-      var legs = document.querySelectorAll("#stops .leg");
-      legs.forEach(function (el, i) {
-        if (routeLegs[i]) el.textContent = "↓ " + MODES[travelMode].label + " " + fmtDur(routeLegs[i].duration) + "・" + fmtDist(routeLegs[i].distance);
-      });
-    }).catch(function () {
-      if (seq !== routeSeq) return;
-      setMsg("ルートサービスに接続できませんでした");
-      sum.textContent = "";
-    });
-  }
-
-  /* ============ route extras: real lane counts + traffic signals (OSM via Overpass) ============ */
-  var laneSamples = null;   // {arr: lanes per step, step: km}
-  function fetchLanes(rt, seq) {
-    laneSamples = null;
-    var pts = rt.geometry.coordinates;
-    if (pts.length < 2) return;
-    // thin the route to <=220 vertices for the around: linestring filter
-    var step = Math.max(1, Math.floor(pts.length / 220));
-    var chain = [];
-    for (var i = 0; i < pts.length; i += step) {
-      chain.push(pts[i][1].toFixed(5) + "," + pts[i][0].toFixed(5));
-    }
-    var last = pts[pts.length - 1];
-    chain.push(last[1].toFixed(5) + "," + last[0].toFixed(5));
-    var c = chain.join(",");
-    var body = travelMode === "car"
-      ? "(way[highway][lanes](around:25," + c + ");node[highway=traffic_signals](around:35," + c + "););"
-      : "node[highway=traffic_signals](around:35," + c + ");";
-    var q = "[out:json][timeout:25];" + body + "out geom;";
-    fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "data=" + encodeURIComponent(q)
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      if (seq !== routeSeq) return; // route changed meanwhile
-      var els = d.elements || [];
-      buildLaneSamples(rt.geometry.coordinates, els.filter(function (e) { return e.type === "way"; }));
-      els.forEach(function (e) { // whole-route signal coverage in one request
-        if (e.type === "node") sigCache[e.id] = { lon: e.lon, lat: e.lat };
-      });
-      updateSignals();
-    }).catch(function () { /* lane/signal info stays hidden */ });
-  }
-
-  function buildLaneSamples(coords, ways) {
-    var segs = [];
-    ways.forEach(function (w) {
-      var ln = parseInt(w.tags && w.tags.lanes, 10);
-      if (!ln || !w.geometry) return;
-      for (var i = 1; i < w.geometry.length; i++) {
-        segs.push([w.geometry[i - 1].lon * RIDE_KX, w.geometry[i - 1].lat * RIDE_KY,
-                   w.geometry[i].lon * RIDE_KX,     w.geometry[i].lat * RIDE_KY, ln]);
-      }
-    });
-    if (!segs.length) { laneSamples = null; return; }
-    var cum = [0];
-    for (var i = 1; i < coords.length; i++) {
-      cum.push(cum[i - 1] + Math.hypot((coords[i][0] - coords[i - 1][0]) * RIDE_KX,
-                                       (coords[i][1] - coords[i - 1][1]) * RIDE_KY));
-    }
-    var total = cum[cum.length - 1];
-    if (total <= 0) { laneSamples = null; return; }
-    var stepKm = 0.03; // one lane sample every 30 m
-    var n = Math.max(1, Math.ceil(total / stepKm));
-    if (n * segs.length > 12e6) { // cap the one-time precompute on very long routes
-      stepKm = total * segs.length / 12e6;
-      n = Math.max(1, Math.ceil(total / stepKm));
-    }
-    var out = new Array(n), si = 1;
-    for (var k = 0; k < n; k++) {
-      var d = k * stepKm;
-      while (si < cum.length - 1 && cum[si] < d) si++;
-      var f = (d - cum[si - 1]) / Math.max(1e-9, cum[si] - cum[si - 1]);
-      var px = (coords[si - 1][0] + (coords[si][0] - coords[si - 1][0]) * f) * RIDE_KX;
-      var py = (coords[si - 1][1] + (coords[si][1] - coords[si - 1][1]) * f) * RIDE_KY;
-      var best = 1e9, bl = 0;
-      for (var j = 0; j < segs.length; j++) {
-        var s = segs[j], dx = s[2] - s[0], dy = s[3] - s[1];
-        var t = ((px - s[0]) * dx + (py - s[1]) * dy) / Math.max(1e-12, dx * dx + dy * dy);
-        t = t < 0 ? 0 : (t > 1 ? 1 : t);
-        var ex = px - (s[0] + t * dx), ey = py - (s[1] + t * dy);
-        var dd = ex * ex + ey * ey;
-        if (dd < best) { best = dd; bl = s[4]; }
-      }
-      out[k] = best < 0.025 * 0.025 ? bl : 0; // must be within 25 m of a tagged way
-    }
-    laneSamples = { arr: out, step: stepKm };
-  }
-
-  function laneAt(d) {
-    if (!laneSamples) return 0;
-    var i = Math.max(0, Math.min(laneSamples.arr.length - 1, Math.floor(d / laneSamples.step)));
-    return laneSamples.arr[i];
-  }
-
-  /* ============ route fly-through (street-level drive / walk view) ============ */
-  var ride = { active: false, paused: false, d: 0, total: 0, mult: 1, raf: 0, lastNow: 0 };
-  var rideCum = null, ridePts = null, rideSeg = 1, ridePrevBearing = null, rideCam = null, rideFrame = 0;
-  var RIDE_KX = 111.32 * Math.cos(26.45 * Math.PI / 180), RIDE_KY = 110.57;
-
-  function ridePointAt(d) {
-    while (rideSeg < rideCum.length - 1 && rideCum[rideSeg] < d) rideSeg++;
-    while (rideSeg > 1 && rideCum[rideSeg - 1] > d) rideSeg--;
-    var f = (d - rideCum[rideSeg - 1]) / Math.max(1e-9, rideCum[rideSeg] - rideCum[rideSeg - 1]);
-    return [ridePts[rideSeg - 1][0] + (ridePts[rideSeg][0] - ridePts[rideSeg - 1][0]) * f,
-            ridePts[rideSeg - 1][1] + (ridePts[rideSeg][1] - ridePts[rideSeg - 1][1]) * f];
-  }
-
-  // Solve the orbital camera so the eye sits eyeH meters above the street,
-  // directly over the viewer position: given pitch 85 and the viewport height,
-  // pick zoom so cameraToCenterDistance*cos(pitch) = eyeH, and shift the map
-  // center forward by the camera's ground offset.
-  function rideCamera() {
-    var mode = MODES[travelMode];
-    var pitch = 85, lat = 26.3;
-    var h = realMap.getContainer().clientHeight || 800;
-    var c2cPx = 1.5 * h; // camera-to-center distance in px (fov 36.87 deg)
-    var mpp = mode.eyeH / (c2cPx * Math.cos(pitch * Math.PI / 180));
-    var zoom = Math.min(22.5, Math.log2(156543.03392 * Math.cos(lat * Math.PI / 180) / mpp));
-    var aheadKm = c2cPx * mpp * Math.sin(pitch * Math.PI / 180) / 1000;
-    return { pitch: pitch, zoom: zoom, aheadKm: aheadKm, lookKm: mode.look, kmps: mode.kmps };
-  }
-
-  function rideUI() {
-    var play = document.getElementById("playBtn"), stop = document.getElementById("stopBtn");
-    play.disabled = !lastGeom && !ride.active;
-    stop.disabled = !ride.active;
-    play.textContent = !ride.active ? "▶ 走行ビュー 開始" : (ride.paused ? "▶ 再開" : "⏸ 一時停止");
-    document.getElementById("hdRide").hidden = !ride.active;
-    document.getElementById("playBtn2").textContent = ride.paused ? "▶" : "⏸";
-    if (!ride.active) {
-      document.getElementById("rideInfo").textContent = "";
-      document.getElementById("rideInfo2").textContent = "";
-    }
-  }
-
-  function rideStep(now) {
-    if (!ride.active || ride.paused) return;
-    var dt = Math.min(0.1, (now - ride.lastNow) / 1000);
-    ride.lastNow = now;
-    ride.d += dt * rideCam.kmps * ride.mult;
-    if (ride.d >= ride.total) { endRide(true); return; }
-    var pos = ridePointAt(ride.d);
-    var look = ridePointAt(Math.min(ride.total, ride.d + rideCam.lookKm));
-    var bx = (look[0] - pos[0]) * RIDE_KX, by = (look[1] - pos[1]) * RIDE_KY;
-    if (bx !== 0 || by !== 0) {
-      var target = Math.atan2(bx, by) * 180 / Math.PI;
-      if (ridePrevBearing === null) ridePrevBearing = target;
-      var diff = ((target - ridePrevBearing + 540) % 360) - 180;
-      ridePrevBearing += diff * 0.05;
-    }
-    var center = ridePointAt(Math.min(ride.total, ride.d + rideCam.aheadKm));
-    realMap.jumpTo({ center: center, bearing: ridePrevBearing || 0, pitch: rideCam.pitch, zoom: rideCam.zoom });
-    updateScene(dt, now);
-    updateSignals();
-    fetchViewportSignals();
-    if (++rideFrame % 12 === 0) {
-      var ln = laneAt(ride.d);
-      var pct = Math.round(ride.d / ride.total * 100);
-      document.getElementById("rideInfo").textContent =
-        (ln ? "車線 " + ln + "・" : "") + pct + "%・残り " + fmtDist((ride.total - ride.d) * 1000);
-      document.getElementById("rideInfo2").textContent =
-        (ln ? "車線" + ln + "・" : "") + pct + "%";
-    }
-    ride.raf = requestAnimationFrame(rideStep);
-  }
-
-  function startRide() {
-    if (!realMap || !lastGeom || lastGeom.length < 2) return;
-    ridePts = lastGeom;
-    rideCum = [0];
-    for (var i = 1; i < ridePts.length; i++) {
-      var dx = (ridePts[i][0] - ridePts[i - 1][0]) * RIDE_KX, dy = (ridePts[i][1] - ridePts[i - 1][1]) * RIDE_KY;
-      rideCum.push(rideCum[i - 1] + Math.hypot(dx, dy));
-    }
-    ride.total = rideCum[rideCum.length - 1];
-    ride.d = 0; rideSeg = 1; ridePrevBearing = null; rideFrame = 0;
-    rideCam = rideCamera();
-    ride.active = true; ride.paused = false;
-    if (realMap.getLayer("bld3d")) {
-      realMap.setPaintProperty("bld3d", "fill-extrusion-opacity", 0.9);
-      if (realMap.hasImage("bld-windows")) { // window facades for a real-city feel
-        realMap.setPaintProperty("bld3d", "fill-extrusion-pattern", "bld-windows");
-      }
-    }
-    buildScene();
-    if (mqMobile.matches && !panel.classList.contains("folded")) { // clear the street view on phones
-      autoFolded = true;
-      setFold(true);
-    }
-    rideUI();
-    ride.lastNow = performance.now();
-    ride.raf = requestAnimationFrame(rideStep);
-  }
-
-  function pauseRide() {
-    ride.paused = true;
-    cancelAnimationFrame(ride.raf);
-    rideUI();
-  }
-
-  function resumeRide() {
-    ride.paused = false;
-    ride.lastNow = performance.now();
-    rideUI();
-    ride.raf = requestAnimationFrame(rideStep);
-  }
-
-  function endRide(finished) {
-    if (!ride.active) return;
-    ride.active = false; ride.paused = false;
-    cancelAnimationFrame(ride.raf);
-    destroyScene();
-    if (realMap && realMap.getLayer("bld3d")) {
-      realMap.setPaintProperty("bld3d", "fill-extrusion-opacity", 0.95);
-      realMap.setPaintProperty("bld3d", "fill-extrusion-pattern", undefined); // back to plain walls
-    }
-    if (autoFolded) { autoFolded = false; setFold(false); }
-    rideUI();
-    if (finished && realMap && stops.length >= 2) {
-      realMap.fitBounds(boundsOf(stops), { padding: fitPad(), maxZoom: 15, duration: 1800 });
-    }
-  }
-
-  function stopDrive(finished) { endRide(finished); } // shared by add/remove/mode/drag handlers
-
-  /* ============ drive scene: cars, pedestrians ============ */
-  var sceneBox = null, actors = [];
-  var CAR_EMOJI = ["🚗", "🚙", "🚗", "🚚", "🚐"]; // no 🚕 — its TAXI text mirrors when flipped
-  var PED_EMOJI = ["🚶", "🚶‍♀️", "🚶‍♂️", "🧍"];
-  function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-
-  // stateless route interpolation (binary search; rideSeg belongs to the camera)
-  function scenePointAt(d) {
-    d = Math.max(0, Math.min(ride.total, d));
-    var lo = 1, hi = rideCum.length - 1;
-    while (lo < hi) { var mid = (lo + hi) >> 1; if (rideCum[mid] < d) lo = mid + 1; else hi = mid; }
-    var f = (d - rideCum[lo - 1]) / Math.max(1e-9, rideCum[lo] - rideCum[lo - 1]);
-    return [ridePts[lo - 1][0] + (ridePts[lo][0] - ridePts[lo - 1][0]) * f,
-            ridePts[lo - 1][1] + (ridePts[lo][1] - ridePts[lo - 1][1]) * f];
-  }
-
-  function ppmAt(lon, lat, sp) { // local px-per-meter via a 3 m probe
-    var q = realMap.project([lon, lat + 3 / 110570]);
-    return Math.hypot(q.x - sp.x, q.y - sp.y) / 3;
-  }
-
-  function bldOccludes(px, py) {
-    // ground objects (cars, people, signal poles) never stand inside a building
-    // footprint — if a 3D building is rendered at their anchor pixel, the
-    // building is between the camera and the object: hide it.
-    if (!realMap.getLayer("bld3d")) return false;
-    try {
-      return realMap.queryRenderedFeatures([px, py], { layers: ["bld3d"] }).length > 0;
-    } catch (e) { return false; }
-  }
-
-  function inFrontOfCam(lon, lat) {
-    // project() mirrors points behind the camera plane into the sky at high
-    // pitch — every screen-anchored object must pass this before being placed.
-    // Camera position derived from the standard mercator eye distance (1.5·H px).
-    var c = realMap.getCenter();
-    var H = realMap.getContainer().clientHeight;
-    var br = realMap.getBearing() * Math.PI / 180;
-    var pr = realMap.getPitch() * Math.PI / 180;
-    var mpp = 156543.03392 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, realMap.getZoom());
-    var Dm = 1.5 * H * mpp;                        // camera-to-center distance (m)
-    var camE = -Dm * Math.sin(pr) * Math.sin(br);  // camera ground offset from center (m)
-    var camN = -Dm * Math.sin(pr) * Math.cos(br);
-    var alt = Dm * Math.cos(pr);                   // camera height above center ground (m)
-    var mLat = 1 / 110570, mLon = 1 / (111320 * Math.cos(lat * Math.PI / 180));
-    var dx = (lon - c.lng) / mLon - camE, dy = (lat - c.lat) / mLat - camN;
-    // dot(view direction, camera->ground point) > 0  →  in front of the lens
-    return Math.sin(pr) * (dx * Math.sin(br) + dy * Math.cos(br)) + Math.cos(pr) * alt > 2;
-  }
-
-  function spawnActor(kind) {
-    var el = document.createElement("div");
-    el.className = "actor";
-    var a = { kind: kind, el: el };
-    if (kind === "car-fwd") {        // same direction, in our (left) lane, roughly our pace
-      el.textContent = pick(CAR_EMOJI);
-      a.speed = (0.55 + Math.random() * 0.75) * MODES.car.kmps; a.dir = 1;
-      a.off = 1.4 + Math.random() * 0.8;
-    } else if (kind === "car-onc") { // oncoming, right side (left-hand traffic)
-      el.textContent = pick(CAR_EMOJI);
-      a.speed = (0.7 + Math.random() * 0.6) * MODES.car.kmps; a.dir = -1;
-      a.off = -(1.8 + Math.random() * 0.9);
-    } else {                         // pedestrian on the road edge
-      el.textContent = pick(PED_EMOJI);
-      a.speed = 0.0012 + Math.random() * 0.0008; a.dir = Math.random() < 0.5 ? 1 : -1;
-      a.off = (Math.random() < 0.5 ? 1 : -1) * (5 + Math.random() * 3.5);
-    }
-    a.d = ride.d + 0.02 + Math.random() * 0.24;
-    sceneBox.appendChild(el);
-    actors.push(a);
-  }
-
-  function buildScene() {
-    destroyScene();
-    sceneBox = document.createElement("div");
-    sceneBox.id = "driveScene";
-    document.getElementById("map").appendChild(sceneBox);
-    var nFwd = travelMode === "car" ? 3 : 1, nOnc = travelMode === "car" ? 4 : 2,
-        nPed = travelMode === "car" ? 5 : 8;
-    var i;
-    for (i = 0; i < nFwd; i++) spawnActor("car-fwd");
-    for (i = 0; i < nOnc; i++) spawnActor("car-onc");
-    for (i = 0; i < nPed; i++) spawnActor("ped");
-  }
-
-  function destroyScene() {
-    if (sceneBox) { sceneBox.remove(); sceneBox = null; }
-    actors = [];
-  }
-
-  var sceneOccFrame = 0;
-  function updateScene(dt, now) {
-    if (!sceneBox) return;
-    var W = realMap.getContainer().clientWidth, H = realMap.getContainer().clientHeight;
-    sceneOccFrame++;
-    // moving actors
-    for (var i = 0; i < actors.length; i++) {
-      var a = actors[i];
-      a.d += a.dir * a.speed * dt;
-      var rel = a.d - ride.d;
-      if (rel < -0.04 || rel > 0.3) { // left the window around the viewer: respawn ahead
-        a.d = ride.d + 0.05 + Math.random() * 0.22;
-        if (a.kind === "ped") a.off = (Math.random() < 0.5 ? 1 : -1) * (5 + Math.random() * 3.5);
-      }
-      var p = scenePointAt(a.d), p2 = scenePointAt(a.d + 0.004);
-      var dx = (p2[0] - p[0]) * RIDE_KX, dy = (p2[1] - p[1]) * RIDE_KY;
-      var L = Math.hypot(dx, dy) || 1e-9;
-      var perpX = -dy / L, perpY = dx / L; // left of route direction
-      var lon = p[0] + perpX * a.off / 1000 / RIDE_KX;
-      var lat = p[1] + perpY * a.off / 1000 / RIDE_KY;
-      if (!inFrontOfCam(lon, lat)) { a.el.style.display = "none"; continue; }
-      var sp = realMap.project([lon, lat]);
-      if (!isFinite(sp.x) || sp.x < -60 || sp.x > W + 60 || sp.y < -40 || sp.y > H + 60) {
-        a.el.style.display = "none";
-        continue;
-      }
-      // building occlusion, staggered: ~2 queryRenderedFeatures per frame
-      if (sceneOccFrame % 6 === i % 6) a._occ = bldOccludes(sp.x, sp.y);
-      if (a._occ) { a.el.style.display = "none"; continue; }
-      var ppm = ppmAt(lon, lat, sp);
-      var size = (a.kind === "ped" ? 1.8 : 2.6) * ppm; // emoji height in real meters
-      if (!isFinite(size) || size < 7) { a.el.style.display = "none"; continue; }
-      size = Math.min(size, 130);
-      var s2 = realMap.project(scenePointAt(a.d + 0.003 * a.dir));
-      var flip = s2.x > sp.x; // emoji face left by default; flip when heading right
-      a.el.style.display = "block";
-      a.el.style.fontSize = size.toFixed(0) + "px";
-      a.el.style.transform = "translate(" + sp.x.toFixed(1) + "px," + sp.y.toFixed(1) + "px) translate(-50%,-92%)" + (flip ? " scaleX(-1)" : "");
-    }
-  }
-
-  /* ============ traffic signals at every crossing (persistent, OSM highway=traffic_signals) ============ */
-  var sigCache = {};        // node id -> {lon, lat}; filled by route fetch + viewport fetch
-  var sigBox = null, sigEls = [];
-  var lastSigFetch = null, lastSigFetchAt = 0;
-
-  function ensureSigBox() {
-    if (sigBox || !realMap) return;
-    sigBox = document.createElement("div");
-    sigBox.id = "sigOverlay";
-    document.getElementById("map").appendChild(sigBox);
-    for (var i = 0; i < 14; i++) {
-      var s = document.createElement("div");
-      s.className = "tsignal";
-      s.style.display = "none";
-      s.innerHTML = '<div class="box"><span class="l g"></span><span class="l y"></span><span class="l r"></span></div><div class="pole"></div>';
-      sigBox.appendChild(s);
-      sigEls.push(s);
-    }
-  }
-
-  function fetchViewportSignals() {
-    if (!realMap || realMap.getZoom() < 15.5) return;
-    var now = Date.now();
-    if (now - lastSigFetchAt < 8000) return; // be polite to Overpass
-    var c = realMap.getCenter();
-    var minMove = ride.active ? 0.5 : 0.25; // km since the last fetch
-    if (lastSigFetch && Math.hypot((c.lng - lastSigFetch.lng) * RIDE_KX,
-                                   (c.lat - lastSigFetch.lat) * RIDE_KY) < minMove) return;
-    lastSigFetchAt = now;
-    lastSigFetch = { lng: c.lng, lat: c.lat };
-    var q = "[out:json][timeout:20];node[highway=traffic_signals](" +
-            (c.lat - 0.0075).toFixed(4) + "," + (c.lng - 0.0085).toFixed(4) + "," +
-            (c.lat + 0.0075).toFixed(4) + "," + (c.lng + 0.0085).toFixed(4) + ");out;";
-    fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: "data=" + encodeURIComponent(q)
-    }).then(function (r) { return r.json(); }).then(function (d) {
-      (d.elements || []).forEach(function (n) {
-        if (n.type === "node") sigCache[n.id] = { lon: n.lon, lat: n.lat };
-      });
-      updateSignals();
-    }).catch(function () {});
-  }
-
-  function sigPhase(id, nowSec) {
-    var ph = (nowSec + (id % 7) * 1.7) % 11; // 5s green, 2s amber, 4s red; offset per crossing
-    return ph < 5 ? "g" : (ph < 7 ? "y" : "r");
-  }
-
-  function updateSignals() {
-    if (!realMap) return;
-    ensureSigBox();
-    if (!sigBox) return;
-    var z = realMap.getZoom(), vis = 0;
-    if (z >= 16) {
-      var c = realMap.getCenter();
-      var mLat = 1 / 110570, mLon = 1 / (111320 * Math.cos(c.lat * Math.PI / 180));
-      var W = realMap.getContainer().clientWidth, H = realMap.getContainer().clientHeight;
-      var pitchRad = realMap.getPitch() * Math.PI / 180;
-      // don't reach past what a person can actually see at this zoom
-      var mpp = 156543.03392 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, z);
-      var dMax = Math.min(500, Math.max(120, mpp * H * 1.6));
-      var list = [];
-      for (var id in sigCache) {
-        var g = sigCache[id];
-        var dist = Math.hypot((g.lon - c.lng) / mLon, (g.lat - c.lat) / mLat);
-        if (dist <= dMax) list.push({ id: +id, lon: g.lon, lat: g.lat, dist: dist });
-      }
-      list.sort(function (a, b) { return a.dist - b.dist; });
-      var nowSec = performance.now() / 1000;
-      var placed = []; // one head per crossing — OSM has 2-6 signal nodes per intersection
-      for (var k = 0; k < list.length && vis < sigEls.length; k++) {
-        var s = list[k];
-        var dup = false;
-        for (var j = 0; j < placed.length; j++) {
-          if (Math.hypot((s.lon - placed[j].lon) / mLon, (s.lat - placed[j].lat) / mLat) < 30) { dup = true; break; }
-        }
-        if (dup) continue;
-        if (!inFrontOfCam(s.lon, s.lat)) continue;
-        var p = realMap.project([s.lon, s.lat]);
-        if (!isFinite(p.x) || p.x < -40 || p.x > W + 40 || p.y < -40 || p.y > H + 80) continue;
-        if (bldOccludes(p.x, p.y)) continue; // a building stands between us and this crossing
-        var ppm = ppmAt(s.lon, s.lat, p);
-        if (!isFinite(ppm) || ppm <= 0) continue;
-        var poleH = 5.2 * Math.sin(pitchRad) * ppm; // head ~5.2 m above the road
-        var box = 0.55 * Math.min(4, ppm * 0.5);
-        if (box < 0.3) continue; // too far to see
-        var el = sigEls[vis++];
-        el._sid = s.id;
-        el.style.display = "flex";
-        el.style.left = p.x.toFixed(1) + "px";
-        el.style.top = p.y.toFixed(1) + "px";
-        el.children[1].style.height = Math.max(0, Math.min(poleH, 420)).toFixed(0) + "px";
-        el.children[0].style.transform = "scale(" + Math.max(0.55, Math.min(3.2, ppm * 0.5)).toFixed(2) + ")";
-        var st = sigPhase(s.id, nowSec);
-        el.classList.remove("g", "y", "r");
-        el.classList.add(st);
-        placed.push(s);
-      }
-    }
-    for (; vis < sigEls.length; vis++) sigEls[vis].style.display = "none";
-  }
-
-  setInterval(function () { // lights keep cycling even when the camera is still
-    if (!sigEls.length) return;
-    var nowSec = performance.now() / 1000;
-    sigEls.forEach(function (el) {
-      if (el.style.display === "none" || el._sid === undefined) return;
-      var st = sigPhase(el._sid, nowSec);
-      el.classList.remove("g", "y", "r");
-      el.classList.add(st);
-    });
-  }, 700);
-
-  function togglePlay() {
-    if (!ride.active) startRide();
-    else if (ride.paused) resumeRide();
-    else pauseRide();
-  }
-  document.getElementById("playBtn").addEventListener("click", togglePlay);
-  document.getElementById("playBtn2").addEventListener("click", togglePlay);
-  document.getElementById("stopBtn").addEventListener("click", function () { endRide(false); });
-  document.getElementById("stopBtn2").addEventListener("click", function () { endRide(false); });
-  document.querySelectorAll(".r-spd .s").forEach(function (b) {
-    b.addEventListener("click", function () {
-      ride.mult = +b.getAttribute("data-s");
-      document.querySelectorAll(".r-spd .s").forEach(function (x) { x.classList.toggle("active", x === b); });
-    });
-  });
-
-  /* ============ mode & buildings toggles ============ */
-  function setMode(m) {
-    if (travelMode === m) return;
-    stopDrive(false);
-    travelMode = m;
-    document.getElementById("modeCar").classList.toggle("active", m === "car");
-    document.getElementById("modeFoot").classList.toggle("active", m === "foot");
-    routeLegs = null;
-    updateItinerary();
-  }
-  document.getElementById("modeCar").addEventListener("click", function () { setMode("car"); });
-  document.getElementById("modeFoot").addEventListener("click", function () { setMode("foot"); });
-
-  function applyBld() {
-    if (!realMap || !realMap.getLayer("bld3d")) return;
-    var on = document.getElementById("bld").checked;
-    realMap.setLayoutProperty("bld3d", "visibility", on ? "visible" : "none");
-    updateLabels();
-  }
-  document.getElementById("bld").addEventListener("change", applyBld);
-
-  /* ============ rooftop building-name labels ============ */
-  // POI names from the vector tiles, anchored at the TOP of the 3D building they
-  // sit on (screen offset = height * sin(pitch) * px/m) — never drawn on bare ground.
-  var nameBox = document.createElement("div");
-  nameBox.id = "bldNames";
-  var lastLblAt = 0;
-  if (realMap) {
-    document.getElementById("map").appendChild(nameBox);
-    realMap.on("move", function () {
-      var now = performance.now();
-      if (now - lastLblAt > 150) { lastLblAt = now; updateLabels(); updateSignals(); }
-    });
-    realMap.on("idle", function () { updateLabels(); updateSignals(); });
-  }
-
-  // pick a type symbol from the name (JP suffixes) or the tile poi class
-  var NAME_ICON = [
-    [/(大橋|橋|bridge)$/i, "🌉"], [/(神社|宮|御嶽)$/, "⛩️"], [/(寺|院)$/, "🛕"],
-    [/(城|グスク|城跡)$/, "🏯"], [/(ビーチ|浜|海岸)$/, "🏖️"], [/(公園|緑地|広場)$/, "🌳"],
-    [/(病院|クリニック|医院)$/, "🏥"], [/ホテル|リゾート/, "🏨"],
-    [/(小学校|中学校|高等学校|高校|大学|学校)$/, "🏫"], [/駅$/, "🚉"],
-    [/(港|漁港|マリーナ)$/, "⚓"], [/タワー$/, "🗼"], [/(温泉|の湯)$/, "♨️"],
-    [/(市場|マート|スーパー)/, "🛒"], [/水族館$/, "🐠"], [/動物園$/, "🦁"], [/灯台$/, "🗼"]
-  ];
-  var CLASS_ICON = {
-    lodging: "🏨", hospital: "🏥", clinic: "🏥", pharmacy: "💊", dentist: "🦷",
-    school: "🏫", college: "🏫", university: "🏫", library: "📚",
-    restaurant: "🍴", fast_food: "🍴", cafe: "☕", bar: "🍸", beer: "🍺",
-    grocery: "🛒", alcohol_shop: "🍶", shop: "🛍️", clothing_store: "👕",
-    bank: "🏦", post: "🏣", police: "🚓", fire_station: "🚒", fuel: "⛽", parking: "🅿️",
-    place_of_worship: "⛩️", castle: "🏯", monument: "🗿", museum: "🏛️", town_hall: "🏛️",
-    theatre: "🎭", cinema: "🎬", aquarium: "🐠", zoo: "🦁", attraction: "📷",
-    park: "🌳", garden: "🌳", beach: "🏖️", campsite: "🏕️", golf: "⛳",
-    stadium: "🏟️", swimming_pool: "🏊", harbor: "⚓", ferry_terminal: "⛴️",
-    railway: "🚉", bus: "🚌", information: "ℹ️"
-  };
-  function poiIcon(nm, cls) {
-    for (var i = 0; i < NAME_ICON.length; i++) {
-      if (NAME_ICON[i][0].test(nm)) return NAME_ICON[i][1];
-    }
-    return CLASS_ICON[cls] || "";
-  }
-
-  function updateLabels() {
-    if (!realMap) return;
-    var z = realMap.getZoom();
-    if (z < 15.8 || !document.getElementById("bld").checked || !realMap.getLayer("bld3d")) {
-      nameBox.innerHTML = "";
-      return;
-    }
-    var c = realMap.getCenter();
-    var pitchRad = realMap.getPitch() * Math.PI / 180;
-    var mLat = 1 / 110570, mLon = 1 / (111320 * Math.cos(c.lat * Math.PI / 180));
-    // px per meter, measured perpendicular to the view direction (immune to pitch foreshortening)
-    var az = (realMap.getBearing() + 90) * Math.PI / 180;
-    var p0 = realMap.project([c.lng, c.lat]);
-    var p1 = realMap.project([c.lng + 50 * Math.sin(az) * mLon, c.lat + 50 * Math.cos(az) * mLat]);
-    var ppm = Math.hypot(p1.x - p0.x, p1.y - p0.y) / 50;
-    if (!isFinite(ppm) || ppm <= 0) { nameBox.innerHTML = ""; return; }
-
-    var near = ride.active || z >= 17.3; // human-scale view: vertical facade signboards
-    var Hc = realMap.getContainer().clientHeight;
-    var mppC = 156543.03392 * Math.cos(c.lat * Math.PI / 180) / Math.pow(2, z);
-    var dLbl = Math.min(700, Math.max(150, mppC * Hc * 1.8)); // don't label past visible ground
-
-    var feats = realMap.querySourceFeatures("ofm", { sourceLayer: "poi" });
-    var seen = {}, cands = [];
-    for (var i = 0; i < feats.length; i++) {
-      var f = feats[i], pr = f.properties || {};
-      var nm = pr["name:ja"] || pr.name;
-      if (!nm || seen[nm]) continue;
-      seen[nm] = 1;
-      var g = f.geometry;
-      if (!g || g.type !== "Point") continue;
-      var lon = g.coordinates[0], lat = g.coordinates[1];
-      var dist = Math.hypot((lon - c.lng) / mLon, (lat - c.lat) / mLat); // meters
-      if (dist > dLbl) continue;
-      cands.push({ nm: nm, cls: pr.class || "", lon: lon, lat: lat, dist: dist });
-    }
-    cands.sort(function (a, b) { return a.dist - b.dist; });
-
-    var W = realMap.getContainer().clientWidth, H = realMap.getContainer().clientHeight;
-    nameBox.innerHTML = "";
-    var shown = 0, maxShown = near ? 8 : 10;
-    var rects = []; // screen-space collision: signboards must never stack
-    for (var k = 0; k < cands.length && shown < maxShown; k++) {
-      var s = cands[k];
-      if (!inFrontOfCam(s.lon, s.lat)) continue;
-      var p = realMap.project([s.lon, s.lat]);
-      if (!isFinite(p.x) || p.x < -40 || p.x > W + 40 || p.y < -20 || p.y > H + 40) continue;
-      var icon = poiIcon(s.nm, s.cls);
-      var hit = realMap.queryRenderedFeatures([p.x, p.y], { layers: ["bld3d"] });
-      var bh;
-      if (hit.length) {
-        bh = hit[0].properties.render_height || 10;
-      } else if (icon === "🌉") {
-        bh = 8; // bridges are elevated structures, not ground — allow without a building
-      } else {
-        continue; // nothing to hang the sign on -> never mark bare ground
-      }
-      var bhPx = bh * Math.sin(pitchRad) * ppm;
-      // estimated screen box (vert: narrow tall banner / flat: wide chip)
-      var ew = near ? 30 : Math.min(s.nm.length * 11 + 34, 260);
-      var eh = near ? Math.max(40, Math.min(bhPx * 0.85, 190)) + 34 : 24;
-      var ex = p.x - ew / 2, ey = near ? p.y - bhPx : p.y - bhPx - eh;
-      var clash = false;
-      for (var q = 0; q < rects.length; q++) {
-        var r = rects[q];
-        if (ex < r.x + r.w && ex + ew > r.x && ey < r.y + r.h && ey + eh > r.y) { clash = true; break; }
-      }
-      if (clash) continue;
-      rects.push({ x: ex, y: ey, w: ew, h: eh });
-      var el = document.createElement("div");
-      el.className = near ? "bname vert" : "bname";
-      if (icon) {
-        var ic = document.createElement("span");
-        ic.className = "pic";
-        ic.textContent = icon;
-        el.appendChild(ic);
-      }
-      var tx = document.createElement("span");
-      tx.className = "tx";
-      tx.textContent = s.nm;
-      if (near) tx.style.maxHeight = Math.max(40, Math.min(bhPx * 0.85, 190)).toFixed(0) + "px";
-      el.appendChild(tx);
-      el.style.left = p.x.toFixed(1) + "px";
-      el.style.top = (p.y - bhPx).toFixed(1) + "px";
-      el.style.opacity = Math.max(0.45, 1 - s.dist / 1400).toFixed(2);
-      nameBox.appendChild(el);
-      shown++;
-    }
-  }
-
-  /* ============ real-time weather (Open-Meteo) + rain radar (RainViewer) ============ */
-  function wxInfo(code) {
-    if (code === 0) return { i: "☀️", t: "快晴", k: "sun" };
-    if (code === 1) return { i: "🌤️", t: "晴れ", k: "sun" };
-    if (code === 2) return { i: "⛅", t: "晴れ時々くもり", k: "sun" };
-    if (code === 3) return { i: "☁️", t: "くもり", k: "" };
-    if (code === 45 || code === 48) return { i: "🌫️", t: "霧", k: "" };
-    if (code >= 51 && code <= 57) return { i: "🌦️", t: "霧雨", k: "rain" };
-    if (code >= 61 && code <= 67) return { i: "🌧️", t: "雨", k: "rain" };
-    if (code >= 71 && code <= 77) return { i: "🌨️", t: "雪", k: "" };
-    if (code >= 80 && code <= 82) return { i: "🌦️", t: "にわか雨", k: "rain" };
-    if (code === 85 || code === 86) return { i: "🌨️", t: "にわか雪", k: "" };
-    if (code >= 95) return { i: "⛈️", t: "雷雨", k: "rain" };
-    return { i: "☁️", t: "—", k: "" };
-  }
-
-  function fetchWx(lats, lons) {
-    var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lats.join(",") +
-              "&longitude=" + lons.join(",") +
-              "&current=temperature_2m,weather_code,precipitation,wind_speed_10m&timezone=Asia%2FTokyo";
-    return fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-      return Array.isArray(d) ? d : [d];
-    });
-  }
-
-  function refreshCenterWx() {
-    if (!realMap) return;
-    var c = realMap.getCenter();
-    if (c.lat < 24 || c.lat > 28.5 || c.lng < 125 || c.lng > 130.5) return; // stay regional
-    fetchWx([c.lat.toFixed(3)], [c.lng.toFixed(3)]).then(function (arr) {
-      var cur = arr[0] && arr[0].current;
-      if (!cur) return;
-      var w = wxInfo(cur.weather_code);
-      document.getElementById("wxIcon").textContent = w.i;
-      document.getElementById("wxMain").textContent = w.t + " " + Math.round(cur.temperature_2m) + "°C";
-      document.getElementById("wxMini").textContent = w.i + " " + Math.round(cur.temperature_2m) + "°";
-      var t = (cur.time || "").slice(11, 16);
-      document.getElementById("wxSub").textContent =
-        "降水 " + cur.precipitation + "mm・風 " + Math.round(cur.wind_speed_10m) + "km/h・地図中心 " + t + " 更新";
-      var mapEl = document.getElementById("map");
-      mapEl.classList.toggle("wx-rain", w.k === "rain");
-      mapEl.classList.toggle("wx-sun", w.k === "sun");
-      applySky(w.k);
-    }).catch(function () {
-      document.getElementById("wxMain").textContent = "天気を取得できませんでした";
-    });
-  }
-
-  function refreshStopsWx() {
-    if (!stops.length) return;
-    var snapshot = stops.slice();
-    fetchWx(snapshot.map(function (s) { return s.lat.toFixed(3); }),
-            snapshot.map(function (s) { return s.lon.toFixed(3); }))
-      .then(function (arr) {
-        snapshot.forEach(function (s, i) {
-          var cur = arr[i] && arr[i].current;
-          if (cur) s.wx = wxInfo(cur.weather_code).i + " " + Math.round(cur.temperature_2m) + "°";
-        });
-        // update rendered rows in place (list may have re-rendered meanwhile)
-        var rows = document.querySelectorAll("#stops .stop-row .wxs");
-        rows.forEach(function (el, i) { if (stops[i] && stops[i].wx) el.textContent = stops[i].wx; });
-      }).catch(function () {});
-  }
-
-  var radarRetryArmed = false;
-  function updateRadar() {
-    if (!realMap) return;
-    if (!realMap.isStyleLoaded()) { // style still loading: retry once it settles
-      if (!radarRetryArmed) {
-        radarRetryArmed = true;
-        realMap.once("idle", function () { radarRetryArmed = false; updateRadar(); });
-      }
-      return;
-    }
-    var on = document.getElementById("radar").checked;
-    try {
-      if (realMap.getLayer("rainradar")) realMap.removeLayer("rainradar");
-      if (realMap.getSource("rainradar")) realMap.removeSource("rainradar");
-    } catch (e) { /* style transitions */ }
-    if (!on) return;
-    fetch("https://api.rainviewer.com/public/weather-maps.json")
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        var past = d.radar && d.radar.past;
-        if (!past || !past.length || realMap.getLayer("rainradar")) return;
-        var path = past[past.length - 1].path;
-        try {
-          realMap.addSource("rainradar", {
-            type: "raster",
-            tiles: [d.host + path + "/256/{z}/{x}/{y}/2/1_1.png"],
-            tileSize: 256,
-            maxzoom: 9, // RainViewer serves low zooms only; overscale beyond
-            attribution: "雨雲: RainViewer"
-          });
-          realMap.addLayer({
-            id: "rainradar", type: "raster", source: "rainradar",
-            // maxzoom: past street level the overscaled radar becomes a giant
-            // grey wall that swallows the drive view — fade it out by z14
-            maxzoom: 14,
-            paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 12.5, 0.6, 14, 0], "raster-fade-duration": 300 }
-          }, realMap.getLayer("bld3d") ? "bld3d" : undefined);
-        } catch (e) { /* style got torn down mid-flight; next refresh retries */ }
-      }).catch(function () {});
-  }
-  document.getElementById("radar").addEventListener("change", updateRadar);
-
-  /* ============ weather sky: blue dome + sun disc / cloud deck / rain streaks ============ */
-  var wxKind = null, skyEls = null;
-  var VFOV = 36.87; // MapLibre default vertical field of view (deg)
-
-  function ensureSkyEls() {
-    if (skyEls || !realMap) return;
-    var m = document.getElementById("map");
-    var sun = document.createElement("div"); sun.id = "sunGlow"; m.appendChild(sun);
-    var cl = document.createElement("div"); cl.id = "cloudFx"; m.appendChild(cl);
-    var rn = document.createElement("div"); rn.id = "rainFx"; m.appendChild(rn);
-    skyEls = { sun: sun, cloud: cl, rain: rn };
-  }
-
-  // rough solar position for Okinawa — plenty accurate for a sky glow
-  function sunPos() {
-    var d = new Date();
-    var N = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
-    var dec = -23.44 * Math.cos((360 / 365) * (N + 10) * Math.PI / 180) * Math.PI / 180;
-    var Hh = (d.getHours() + d.getMinutes() / 60 - 12) * 15 * Math.PI / 180;
-    var phi = 26.3 * Math.PI / 180;
-    var el = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(Hh));
-    var az = Math.atan2(Math.sin(Hh), Math.cos(Hh) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi)) * 180 / Math.PI + 180;
-    return { az: az, el: el * 180 / Math.PI };
-  }
-
-  function applySky(kind) {
-    wxKind = kind;
-    if (!realMap) return;
-    ensureSkyEls();
-    var night = sunPos().el < -2;
-    if (realMap.setSky) {
-      var c = night              ? { sky: "#0b1a30", hor: "#22344e", fog: "#2c3c55" }
-            : kind === "sun"     ? { sky: "#1f7ad1", hor: "#bfe4ff", fog: "#eaf6ff" }
-            : kind === "rain"    ? { sky: "#48525c", hor: "#77828b", fog: "#98a2aa" }
-            :                      { sky: "#7f97ab", hor: "#c8d3da", fog: "#e0e6ea" };
-      try {
-        realMap.setSky({
-          "sky-color": c.sky, "horizon-color": c.hor, "fog-color": c.fog,
-          "sky-horizon-blend": 0.8, "horizon-fog-blend": 0.6, "fog-ground-blend": 0.5
-        });
-      } catch (e) { /* style not ready; the load handler re-applies */ }
-    }
-    skyEls.rain.style.display = kind === "rain" ? "block" : "none";
-    skyEls.cloud.className = kind === "rain" ? "rain" : (kind === "sun" ? "sun" : "cloudy");
-    updateSkyPos();
-  }
-
-  function updateSkyPos() {
-    if (!skyEls || !realMap) return;
-    var W = realMap.getContainer().clientWidth, H = realMap.getContainer().clientHeight;
-    var pitch = realMap.getPitch(), bearing = realMap.getBearing();
-    var hfov = 2 * Math.atan(Math.tan(VFOV / 2 * Math.PI / 180) * (W / H)) * 180 / Math.PI;
-    var yHor = H / 2 - (90 - pitch) * H / VFOV; // screen y of the horizon line
-    var skyVisible = yHor > -30;
-    var sp = sunPos(), night = sp.el < -2;
-    // cloud deck hugs the horizon, parallaxes with bearing, drifts slowly
-    if (skyVisible && wxKind !== null && !night) {
-      skyEls.cloud.style.display = "block";
-      skyEls.cloud.style.top = Math.max(-60, yHor - 150).toFixed(0) + "px";
-      skyEls.cloud.style.backgroundPositionX =
-        (((-bearing / hfov * W + performance.now() / 900) % 1000) + 1000) % 1000 + "px";
-    } else {
-      skyEls.cloud.style.display = "none";
-    }
-    // sun disc at its true compass direction & altitude (clamped to the top edge at high noon)
-    var diff = ((sp.az - bearing + 540) % 360) - 180;
-    if (skyVisible && !night && wxKind === "sun" && sp.el > -1 && Math.abs(diff) < hfov * 0.75) {
-      var x = W / 2 + diff / hfov * W;
-      var y = Math.max(-70, yHor - sp.el * H / VFOV);
-      if (y < H) {
-        skyEls.sun.style.display = "block";
-        skyEls.sun.style.left = x.toFixed(0) + "px";
-        skyEls.sun.style.top = y.toFixed(0) + "px";
-      } else {
-        skyEls.sun.style.display = "none";
-      }
-    } else {
-      skyEls.sun.style.display = "none";
-    }
-  }
-
-  setInterval(function () {
-    if (!realMap) return;
-    refreshCenterWx();
-    refreshStopsWx();
-    if (document.getElementById("radar").checked) updateRadar(); // pull newest radar frame
-    if (wxKind !== null) applySky(wxKind); // track day/night transitions
-  }, 10 * 60 * 1000);
-
-  /* ============ search box wiring ============ */
-  var qInput = document.getElementById("q");
-  qInput.addEventListener("input", function () {
-    var q = qInput.value.trim();
-    clearTimeout(sugTimer);
-    if (q.length < 2) { clearSug(); return; }
-    sugTimer = setTimeout(function () { searchSpots(q, false); }, 400);
-  });
-  qInput.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") { e.preventDefault(); doAdd(); }
-    if (e.key === "Escape") clearSug();
-  });
-  document.getElementById("addBtn").addEventListener("click", doAdd);
-  function doAdd() {
-    var q = qInput.value.trim();
-    if (sugResults.length) { addStop(sugResults[0]); return; }
-    if (!q) return;
-    pendingAdd = true;
-    clearTimeout(sugTimer);
-    searchSpots(q, true);
-  }
-  document.addEventListener("click", function (e) {
-    if (!e.target.closest(".r-search")) clearSug();
-  });
-
-  /* ---- debug handles ---- */
-  window.__addStop = addStop;
-  window.__startDrive = startRide;
-  window.__ride = ride;
-  window.__wx = { center: refreshCenterWx, stops: refreshStopsWx, radar: updateRadar };
-  window.__sky = { apply: applySky, pos: updateSkyPos, sun: sunPos };
-  window.__lanes = function () { return laneSamples; };
-  window.__laneAt = laneAt;
-  window.__scene = function () {
-    return { actors: actors.length, signals: Object.keys(sigCache).length,
-             signalsShown: sigEls.filter(function (e) { return e.style.display !== "none"; }).length,
-             visible: sceneBox ? sceneBox.querySelectorAll(".actor[style*='block']").length : 0 };
-  };
-  window.__sigFetch = fetchViewportSignals;
-  window.__sigDraw = updateSignals;
-  window.__sceneTick = function (dt, now) { updateScene(dt, now); };
-  window.__labels = updateLabels;
-  window.__fold = setFold;
-})();
+}
 </script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+// ---------------------------------------------------------------- presets
+const PRESETS = {
+  kokusai: { name: '国際通り', lat: 26.2145, lon: 127.6905, radius: 620 },
+  shuri:   { name: '首里城',   lat: 26.2172, lon: 127.7195, radius: 620 },
+  port:    { name: '那覇港',   lat: 26.2140, lon: 127.6650, radius: 700 },
+  american:{ name: '美浜(北谷)', lat: 26.3155, lon: 127.7580, radius: 680 },
+};
+let CURRENT = 'kokusai';
+
+// ---------------------------------------------------------------- dom
+const lmsg  = document.getElementById('lmsg');
+const loadEl= document.getElementById('load');
+const statsEl = document.getElementById('stats');
+const toastEl = document.getElementById('toast');
+const needle = document.getElementById('needle');
+let toastT;
+function toast(m){ toastEl.textContent=m; toastEl.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),2600); }
+function setMsg(m){ lmsg.textContent=m; }
+
+// ---------------------------------------------------------------- renderer / scene
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe0f2, 700, 2600);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 8000);
+camera.position.set(0, 420, 620);
+
+// ---- sky + sun
+const sky = new Sky(); sky.scale.setScalar(12000); scene.add(sky);
+const sun = new THREE.Vector3();
+const skyU = sky.material.uniforms;
+skyU.turbidity.value = 6; skyU.rayleigh.value = 1.4;
+skyU.mieCoefficient.value = 0.006; skyU.mieDirectionalG.value = 0.8;
+function setSun(elevDeg, aziDeg){
+  const phi = THREE.MathUtils.degToRad(90 - elevDeg);
+  const theta = THREE.MathUtils.degToRad(aziDeg);
+  sun.setFromSphericalCoords(1, phi, theta);
+  skyU.sunPosition.value.copy(sun);
+}
+setSun(34, 155);
+
+const hemi = new THREE.HemisphereLight(0xdcecff, 0x6a7060, 1.25);
+scene.add(hemi);
+const amb = new THREE.AmbientLight(0xbcd0ea, 0.35);
+scene.add(amb);
+const dir = new THREE.DirectionalLight(0xfff4e2, 2.0);
+dir.position.copy(sun).multiplyScalar(1400);
+dir.castShadow = true;
+dir.shadow.mapSize.set(2048, 2048);
+const S = 900;
+dir.shadow.camera.left=-S; dir.shadow.camera.right=S; dir.shadow.camera.top=S; dir.shadow.camera.bottom=-S;
+dir.shadow.camera.near=100; dir.shadow.camera.far=4000; dir.shadow.bias=-0.0004;
+scene.add(dir);
+scene.add(dir.target);
+
+// ---------------------------------------------------------------- controls
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+orbit.maxPolarAngle = Math.PI*0.495; orbit.minDistance = 25; orbit.maxDistance = 2200;
+orbit.target.set(0, 0, 0);
+
+const walk = new PointerLockControls(camera, renderer.domElement);
+const keys = {};
+addEventListener('keydown', e=>{ keys[e.code]=true; });
+addEventListener('keyup',   e=>{ keys[e.code]=false; });
+let mode = 'orbit';
+const walkVel = new THREE.Vector3();
+
+// ---------------------------------------------------------------- projection
+let ORIGIN = { lat: PRESETS[CURRENT].lat, lon: PRESETS[CURRENT].lon };
+const R = 111320;
+function toLocal(lon, lat){
+  const x = (lon - ORIGIN.lon) * R * Math.cos(ORIGIN.lat*Math.PI/180);
+  const z = -(lat - ORIGIN.lat) * 110540;
+  return [x, z];
+}
+
+// ---------------------------------------------------------------- world container
+let world = new THREE.Group();
+scene.add(world);
+let cars = [];
+let buildingMeshes = [];   // for wireframe toggle
+let bldBoxes = [];         // for walk collision {minx,maxx,minz,maxz}
+let signals = [];          // {s, group} traffic lights to animate
+let sigClock = 0;
+
+// ground base plane (below everything)
+function addGround(){
+  const g = new THREE.PlaneGeometry(6000, 6000);
+  const m = new THREE.MeshStandardMaterial({ color: 0x2b3b31, roughness: 1 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.rotation.x = -Math.PI/2; mesh.position.y = -0.4;
+  mesh.receiveShadow = true;
+  world.add(mesh);
+}
+
+// ---------------------------------------------------------------- overpass
+function bbox(p){
+  const dLat = p.radius/110540;
+  const dLon = p.radius/(R*Math.cos(p.lat*Math.PI/180));
+  return [p.lat-dLat, p.lon-dLon, p.lat+dLat, p.lon+dLon]; // s,w,n,e
+}
+function query(p){
+  const [s,w,n,e] = bbox(p);
+  const bb = `${s},${w},${n},${e}`;
+  return `[out:json][timeout:60];(` +
+    `way["building"](${bb});` +
+    `way["highway"](${bb});` +
+    `way["natural"="water"](${bb});` +
+    `way["waterway"~"riverbank|canal|stream|river"](${bb});` +
+    `way["leisure"~"park|garden|pitch|playground"](${bb});` +
+    `way["natural"~"wood|scrub|grassland|beach|sand"](${bb});` +
+    `way["landuse"~"grass|forest|recreation_ground|cemetery"](${bb});` +
+  `);out body;>;out skel qt;`;
+}
+const ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+async function fetchOSM(p){
+  const cacheKey = 'osm_'+CURRENT+'_v2';
+  try {
+    const c = localStorage.getItem(cacheKey);
+    if (c) { setMsg('キャッシュから読込…'); return JSON.parse(c); }
+  } catch(_){}
+  const body = 'data='+encodeURIComponent(query(p));
+  let lastErr;
+  for (let i=0;i<ENDPOINTS.length;i++){
+    try {
+      setMsg(`地図データ取得中… (${i+1})`);
+      const res = await fetch(ENDPOINTS[i], { method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      const json = await res.json();
+      try { localStorage.setItem(cacheKey, JSON.stringify(json)); } catch(_){}
+      return json;
+    } catch(err){ lastErr = err; }
+  }
+  throw lastErr || new Error('overpass failed');
+}
+
+// ---------------------------------------------------------------- build geometry
+function heightOf(tags){
+  if (tags.height){ const h=parseFloat(tags.height); if(!isNaN(h)) return h; }
+  if (tags['building:levels']){ const l=parseFloat(tags['building:levels']); if(!isNaN(l)) return l*3.3+1; }
+  // vary default a little by building type
+  if (tags.building==='house' || tags.building==='detached') return 6 + Math.random()*2;
+  if (tags.building==='retail' || tags.building==='commercial') return 12 + Math.random()*10;
+  return 8 + Math.random()*6;
+}
+function roadWidth(tags){
+  const h = tags.highway;
+  if (h==='motorway'||h==='trunk') return 12;
+  if (h==='primary') return 10;
+  if (h==='secondary') return 8;
+  if (h==='tertiary') return 6.5;
+  if (h==='residential'||h==='unclassified'||h==='living_street') return 5;
+  if (h==='service') return 3.5;
+  if (h==='footway'||h==='path'||h==='pedestrian'||h==='steps') return 2.2;
+  return 4;
+}
+
+function buildWorld(osm){
+  // node map
+  const nodes = new Map();
+  for (const el of osm.elements) if (el.type==='node') nodes.set(el.id, el);
+  const ways = osm.elements.filter(el=>el.type==='way' && el.nodes && el.nodes.length>=2);
+
+  const ringWithIds = (way)=>{
+    const pts=[], ids=[];
+    for (const id of way.nodes){ const nd=nodes.get(id); if(nd){ const [x,z]=toLocal(nd.lon,nd.lat); pts.push([x,z]); ids.push(id); } }
+    return { pts, ids };
+  };
+
+  // --- classify
+  const bldGeoms=[]; const bldColors=[];
+  const roadRibbons=[];
+  const areaMeshes=[]; // parks/water flat polys
+  const roadWays=[];   // {tags, pts, ids} for markings + signals
+  const nodeCount=new Map(); // node id -> # of road ways through it
+  const nodeLocal=new Map(); // node id -> [x,z]
+
+  let bCount=0, rCount=0;
+
+  for (const way of ways){
+    const t = way.tags || {};
+    const { pts, ids } = ringWithIds(way);
+    if (pts.length<2) continue;
+
+    if (t.building){
+      if (pts.length<4) continue;
+      const shape = new THREE.Shape();
+      shape.moveTo(pts[0][0], pts[0][1]);
+      for (let i=1;i<pts.length;i++) shape.lineTo(pts[i][0], pts[i][1]);
+      const h = Math.min(heightOf(t), 160);
+      let geo;
+      try { geo = new THREE.ExtrudeGeometry(shape, { depth:h, bevelEnabled:false }); }
+      catch(_) { continue; }
+      geo.rotateX(-Math.PI/2);      // shape XY plane -> XZ ground, extrude up
+      geo.computeVertexNormals();
+      // per-building tint
+      const base = new THREE.Color().setHSL(0.09 + Math.random()*0.05, 0.10, 0.52 + Math.min(h/240,0.28) + (Math.random()-0.5)*0.06);
+      const cnt = geo.attributes.position.count;
+      const col = new Float32Array(cnt*3);
+      for (let i=0;i<cnt;i++){ col[i*3]=base.r; col[i*3+1]=base.g; col[i*3+2]=base.b; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+      bldGeoms.push(geo);
+      bCount++;
+      // collision box (+ height for sign mounting)
+      let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
+      for (const pp of pts){ minx=Math.min(minx,pp[0]); maxx=Math.max(maxx,pp[0]); minz=Math.min(minz,pp[1]); maxz=Math.max(maxz,pp[1]); }
+      bldBoxes.push({minx,maxx,minz,maxz,h});
+    }
+    else if (t.highway){
+      const w = roadWidth(t);
+      const geo = ribbon(pts, w);
+      if (geo) { roadRibbons.push(geo); rCount++; }
+      roadWays.push({ tags:t, pts, ids });
+      for (let k=0;k<ids.length;k++){
+        const id=ids[k];
+        nodeCount.set(id, (nodeCount.get(id)||0)+1);
+        if (!nodeLocal.has(id)) nodeLocal.set(id, pts[k]);
+      }
+      // remember main roads for cars
+      if (['primary','secondary','tertiary','residential','trunk'].includes(t.highway) && pts.length>=3)
+        ROADS_FOR_CARS.push(pts);
+    }
+    else if (t.natural==='water' || t.waterway || t.landuse==='basin'){
+      const m = flatPoly(pts, 0x2f6f9e, 0.05); if (m) areaMeshes.push(m);
+    }
+    else if (t.leisure || t.natural || t.landuse){
+      const green = (t.leisure==='pitch'||t.natural==='beach'||t.natural==='sand') ? 0xcbb87a : 0x3f7a43;
+      const m = flatPoly(pts, green, 0.08); if (m) areaMeshes.push(m);
+    }
+  }
+
+  // merge + add areas (parks/water) first (lowest)
+  for (const m of areaMeshes){ m.receiveShadow=true; world.add(m); }
+
+  // roads
+  if (roadRibbons.length){
+    const merged = mergeGeometries(roadRibbons, false);
+    const roadMat = new THREE.MeshStandardMaterial({ color:0x2f333a, roughness:0.98 });
+    const roadMesh = new THREE.Mesh(merged, roadMat);
+    roadMesh.receiveShadow = true;
+    world.add(roadMesh);
+  }
+
+  // lane markings, crosswalks, traffic signals
+  buildRoadDetails(roadWays, nodeCount, nodeLocal);
+
+  // SVG shop signs on the building walls facing the streets
+  addStreetSigns(roadWays, bldBoxes);
+
+  // buildings
+  if (bldGeoms.length){
+    const merged = mergeGeometries(bldGeoms, false);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.82, metalness:0.04 });
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    world.add(mesh);
+    buildingMeshes.push(mesh);
+    // wireframe overlay (hidden by default)
+    const wire = new THREE.LineSegments(new THREE.EdgesGeometry(merged, 30), new THREE.LineBasicMaterial({ color:0x0a0e16, transparent:true, opacity:0.25 }));
+    wire.visible=false; wire.name='wire'; world.add(wire);
+  }
+
+  return { bCount, rCount };
+}
+
+let ROADS_FOR_CARS = [];
+
+// flat filled polygon (parks, water)
+function flatPoly(pts, color, y){
+  if (pts.length<4) return null;
+  const shape = new THREE.Shape();
+  shape.moveTo(pts[0][0], pts[0][1]);
+  for (let i=1;i<pts.length;i++) shape.lineTo(pts[i][0], pts[i][1]);
+  let geo;
+  try { geo = new THREE.ShapeGeometry(shape); } catch(_){ return null; }
+  geo.rotateX(-Math.PI/2);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness:0.9 }));
+  mesh.position.y = y;
+  return mesh;
+}
+
+// road ribbon from a polyline
+function ribbon(pts, width){
+  const hw = width/2;
+  const positions=[]; const indices=[];
+  let vi=0;
+  for (let i=0;i<pts.length-1;i++){
+    const [x1,z1]=pts[i], [x2,z2]=pts[i+1];
+    let dx=x2-x1, dz=z2-z1; const len=Math.hypot(dx,dz); if(len<0.01) continue;
+    dx/=len; dz/=len;
+    const nx=-dz*hw, nz=dx*hw;
+    positions.push(x1+nx,0,z1+nz,  x1-nx,0,z1-nz,  x2+nx,0,z2+nz,  x2-nx,0,z2-nz);
+    indices.push(vi,vi+1,vi+2,  vi+1,vi+3,vi+2);
+    vi+=4;
+  }
+  if (!positions.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  geo.translate(0,0.06,0);
+  return geo;
+}
+
+// ---------------------------------------------------------------- road markings
+// a thin line following a polyline; supports sideways offset + dashing
+function lineRibbon(pts, halfW, opt){
+  opt = opt || {};
+  const yOff = opt.yOff ?? 0.12;
+  const off = opt.offset || 0;
+  const positions=[]; const indices=[]; let vi=0;
+  for (let i=0;i<pts.length-1;i++){
+    let x1=pts[i][0], z1=pts[i][1], x2=pts[i+1][0], z2=pts[i+1][1];
+    let dx=x2-x1, dz=z2-z1; const len=Math.hypot(dx,dz); if(len<0.02) continue;
+    dx/=len; dz/=len;
+    // shift whole segment sideways by `off` along its normal
+    const ox=-dz*off, oz=dx*off; x1+=ox; z1+=oz; x2+=ox; z2+=oz;
+    const nx=-dz*halfW, nz=dx*halfW;
+    const emit=(ax,az,bx,bz)=>{
+      positions.push(ax+nx,yOff,az+nz, ax-nx,yOff,az-nz, bx+nx,yOff,bz+nz, bx-nx,yOff,bz-nz);
+      indices.push(vi,vi+1,vi+2, vi+1,vi+3,vi+2); vi+=4;
+    };
+    if (opt.dash){
+      const period=opt.dashLen+opt.gapLen; let s=0;
+      while (s<len){
+        const e=Math.min(len, s+opt.dashLen);
+        emit(x1+dx*s, z1+dz*s, x1+dx*e, z1+dz*e);
+        s+=period;
+      }
+    } else {
+      emit(x1,z1,x2,z2);
+    }
+  }
+  if (!positions.length) return null;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  g.setIndex(indices); g.computeVertexNormals();
+  return g;
+}
+
+// zebra crosswalk across a road arm (bars perpendicular to travel dir)
+function zebra(center, dir, roadHalf){
+  const perp=[-dir[1], dir[0]];
+  const barW=0.45, gap=0.55, depth=roadHalf*2; // depth = across-road span
+  const span=roadHalf*2 - 0.4;
+  const n=Math.max(2, Math.floor(span/(barW+gap)));
+  const positions=[]; const indices=[]; let vi=0;
+  for (let i=0;i<n;i++){
+    const o=(i-(n-1)/2)*(barW+gap);              // step along travel dir
+    const cx=center[0]+dir[0]*o, cz=center[1]+dir[1]*o;
+    const ax=perp[0]*depth/2, az=perp[1]*depth/2; // half length across road
+    const bx=dir[0]*barW/2,   bz=dir[1]*barW/2;   // half width along dir
+    positions.push(
+      cx+ax+bx,0.14,cz+az+bz,  cx-ax+bx,0.14,cz-az+bz,
+      cx+ax-bx,0.14,cz+az-bz,  cx-ax-bx,0.14,cz-az-bz);
+    indices.push(vi,vi+1,vi+2, vi+1,vi+3,vi+2); vi+=4;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  g.setIndex(indices); g.computeVertexNormals();
+  return g;
+}
+
+// merge arm directions that are nearly collinear (same street through a node)
+function dedupeArms(arms){
+  const out=[];
+  for (const a of arms){
+    const al=Math.hypot(a[0],a[1]); if(al<0.01) continue;
+    const ang=Math.atan2(a[1],a[0]); let dup=false;
+    for (const o of out){ const oa=Math.atan2(o[1],o[0]); let d=Math.abs(ang-oa); if(d>Math.PI)d=2*Math.PI-d; if(d<0.28){dup=true;break;} }
+    if(!dup) out.push(a);
+  }
+  return out;
+}
+
+// a Japanese-style horizontal traffic signal (green | yellow | red), head faces +Z
+function makeSignalJP(armLen){
+  const g=new THREE.Group();
+  const metal=new THREE.MeshStandardMaterial({ color:0x9098a0, roughness:0.5, metalness:0.55 });
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,5.2,12), metal);
+  pole.position.set(0,2.6,0); g.add(pole);
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(armLen,0.12,0.12), metal);
+  arm.position.set(-armLen/2,5.05,0); g.add(arm);
+  const headX=-armLen+0.35;
+  const back=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.58,0.06), new THREE.MeshStandardMaterial({ color:0x0e1013, roughness:0.7 }));
+  back.position.set(headX,4.98,-0.17); g.add(back);
+  const housing=new THREE.Mesh(new THREE.BoxGeometry(1.24,0.46,0.32), new THREE.MeshStandardMaterial({ color:0x22262c, roughness:0.6 }));
+  housing.position.set(headX,4.98,0); g.add(housing);
+  const visorMat=new THREE.MeshStandardMaterial({ color:0x15181c, roughness:0.7 });
+  const mk=(x,color)=>{
+    const m=new THREE.MeshStandardMaterial({ color:0x0c0c0c, emissive:color, emissiveIntensity:0, roughness:0.35 });
+    const s=new THREE.Mesh(new THREE.SphereGeometry(0.155,16,16), m);
+    s.position.set(headX+x,4.98,0.17); g.add(s);
+    const visor=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.19,0.12,14,1,true,0,Math.PI), visorMat);
+    visor.rotation.x=Math.PI/2; visor.position.set(headX+x,5.06,0.2); g.add(visor);
+    return s;
+  };
+  // Japan horizontal order (driver's view): green left, yellow center, red right
+  const green=mk(-0.37,0x25e070), yellow=mk(0,0xffce38), red=mk(0.37,0xff3030);
+  g.traverse(o=>{ if(o.isMesh) o.castShadow=false; });
+  pole.castShadow=true;
+  return { group3:g, r:red, y:yellow, g:green };
+}
+
+// build all lane markings + crosswalks + signals from the road network
+function buildRoadDetails(roadWays, nodeCount, nodeLocal){
+  const whiteGeoms=[], yellowGeoms=[];
+
+  // --- lane / edge markings
+  for (const rw of roadWays){
+    const t=rw.tags, pts=rw.pts; if(pts.length<2) continue;
+    const cls=t.highway; const w=roadWidth(t); const hw=w/2;
+    const major=(cls==='primary'||cls==='secondary'||cls==='trunk');
+    const mid=(cls==='tertiary'||cls==='residential'||cls==='unclassified'||cls==='living_street');
+    if (major){ const g=lineRibbon(pts,0.11,{dash:false,yOff:0.13}); if(g) yellowGeoms.push(g); }
+    else if (mid && w>=5){ const g=lineRibbon(pts,0.09,{dash:true,dashLen:3,gapLen:4.5,yOff:0.12}); if(g) whiteGeoms.push(g); }
+    if (w>=7){
+      const gl=lineRibbon(pts,0.08,{dash:false,yOff:0.12,offset:(hw-0.35)});
+      const gr=lineRibbon(pts,0.08,{dash:false,yOff:0.12,offset:-(hw-0.35)});
+      if(gl) whiteGeoms.push(gl); if(gr) whiteGeoms.push(gr);
+    }
+  }
+
+  // --- intersections
+  const majorNode=new Set();
+  for (const rw of roadWays){
+    if(['primary','secondary','tertiary','trunk'].includes(rw.tags.highway))
+      for(const id of rw.ids) majorNode.add(id);
+  }
+  const nodeArms=new Map(), nodeHalf=new Map();
+  for (const rw of roadWays){
+    const {pts,ids}=rw; const hw=roadWidth(rw.tags)/2;
+    for (let k=0;k<ids.length;k++){
+      const id=ids[k]; if((nodeCount.get(id)||0)<3) continue;
+      let arms=nodeArms.get(id); if(!arms){arms=[]; nodeArms.set(id,arms);}
+      nodeHalf.set(id, Math.max(nodeHalf.get(id)||0, hw));
+      if(k>0){ const p=pts[k],q=pts[k-1]; arms.push([q[0]-p[0],q[1]-p[1]]); }
+      if(k<pts.length-1){ const p=pts[k],q=pts[k+1]; arms.push([q[0]-p[0],q[1]-p[1]]); }
+    }
+  }
+  // signalize the major intersections nearest the origin
+  const cand=[];
+  for (const [id,arms] of nodeArms){ if(majorNode.has(id) && (nodeCount.get(id)||0)>=3) cand.push(id); }
+  cand.sort((a,b)=>{ const pa=nodeLocal.get(a),pb=nodeLocal.get(b); return (pa[0]*pa[0]+pa[1]*pa[1])-(pb[0]*pb[0]+pb[1]*pb[1]); });
+  const MAXI=Math.min(cand.length, 52);
+  for (let ci=0; ci<MAXI; ci++){
+    const id=cand[ci]; const c=nodeLocal.get(id);
+    const arms=dedupeArms(nodeArms.get(id)); const hw=Math.max(nodeHalf.get(id)||4, 4);
+    for (const arm of arms){
+      const len=Math.hypot(arm[0],arm[1]); if(len<6) continue;
+      const dir=[arm[0]/len, arm[1]/len];
+      const stop=hw+1.3;
+      const cwCenter=[c[0]+dir[0]*stop, c[1]+dir[1]*stop];
+      const zg=zebra(cwCenter, dir, hw); if(zg) whiteGeoms.push(zg);
+      // signal at the near-left curb, arm reaching over the road, head facing +dir (oncoming)
+      const perp=[dir[1], -dir[0]];
+      const px=c[0]+dir[0]*(stop+0.4)+perp[0]*(hw+0.7);
+      const pz=c[1]+dir[1]*(stop+0.4)+perp[1]*(hw+0.7);
+      const s=makeSignalJP(hw+0.9);
+      s.group3.position.set(px,0,pz);
+      s.group3.rotation.y=Math.atan2(dir[0],dir[1]);
+      world.add(s.group3);
+      const angDeg=(((Math.atan2(dir[0],dir[1])*180/Math.PI)+360)%180);
+      signals.push({ s, group: angDeg<90?0:1 });
+    }
+  }
+
+  // --- merged marking meshes
+  if (whiteGeoms.length){
+    const m=mergeGeometries(whiteGeoms,false);
+    const mesh=new THREE.Mesh(m, new THREE.MeshStandardMaterial({ color:0xeef1f5, roughness:0.55, emissive:0x2a2d33, emissiveIntensity:0.2 }));
+    mesh.receiveShadow=false; world.add(mesh);
+  }
+  if (yellowGeoms.length){
+    const m=mergeGeometries(yellowGeoms,false);
+    const mesh=new THREE.Mesh(m, new THREE.MeshStandardMaterial({ color:0xf2c026, roughness:0.55, emissive:0x3a2c00, emissiveIntensity:0.25 }));
+    world.add(mesh);
+  }
+}
+
+// advance the signal cycle
+function updateSignals(){
+  const T=12;
+  for (const sig of signals){
+    let x=(sigClock + (sig.group?6:0)) % T;
+    const st = x<5 ? 'g' : (x<6.4 ? 'y' : 'r');
+    sig.s.g.material.emissiveIntensity = st==='g'?2.9:0.0;
+    sig.s.y.material.emissiveIntensity = st==='y'?2.9:0.0;
+    sig.s.r.material.emissiveIntensity = st==='r'?2.9:0.0;
+  }
+}
+
+// ---------------------------------------------------------------- SVG shop signs
+const SIGN_UP = new THREE.Vector3(0,1,0);
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// vertical Japanese blade sign (袖看板): characters stacked top→bottom
+function vSignSVG(text, bg, fg){
+  const chars=[...text]; const n=chars.length; const W=128, H=384, pad=16;
+  const step=(H-pad*2)/n; const fs=Math.min(step*0.82, W*0.66);
+  let t='';
+  for (let i=0;i<n;i++){
+    const cy=pad+step*(i+0.5);
+    t+=`<text x="${W/2}" y="${cy}" font-size="${fs.toFixed(1)}" fill="${fg}" font-family="'Hiragino Sans','Yu Gothic',sans-serif" font-weight="800" text-anchor="middle" dominant-baseline="central">${esc(chars[i])}</text>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" rx="9" fill="${bg}"/><rect x="5" y="5" width="${W-10}" height="${H-10}" rx="7" fill="none" stroke="${fg}" stroke-opacity="0.55" stroke-width="3"/>${t}</svg>`;
+}
+// horizontal storefront banner
+function hSignSVG(text, bg, fg){
+  const W=384, H=128;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" rx="10" fill="${bg}"/><rect x="6" y="6" width="${W-12}" height="${H-12}" rx="7" fill="none" stroke="${fg}" stroke-opacity="0.5" stroke-width="4"/><text x="${W/2}" y="${H/2}" font-size="62" fill="${fg}" font-family="'Hiragino Sans','Yu Gothic',sans-serif" font-weight="800" text-anchor="middle" dominant-baseline="central" textLength="${W-40}" lengthAdjust="spacingAndGlyphs">${esc(text)}</text></svg>`;
+}
+// rasterize an SVG string into a live texture (draws once the image decodes)
+function svgTexture(svg, w, h){
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+  const ctx=cv.getContext('2d');
+  const tex=new THREE.CanvasTexture(cv);
+  tex.colorSpace=THREE.SRGBColorSpace; tex.anisotropy=4;
+  const img=new Image();
+  img.onload=()=>{ try{ ctx.clearRect(0,0,w,h); ctx.drawImage(img,0,0,w,h); tex.needsUpdate=true; }catch(_){} };
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  return tex;
+}
+let _signDefs=null;
+function signDefs(){
+  if (_signDefs) return _signDefs;
+  const V=(t,bg,fg)=>({ tex:svgTexture(vSignSVG(t,bg,fg),128,384), aspect:128/384 });
+  const H=(t,bg,fg)=>({ tex:svgTexture(hSignSVG(t,bg,fg),384,128), aspect:384/128 });
+  _signDefs={
+    blade:[ V('ラーメン','#c0182b','#ffffff'), V('居酒屋','#12305e','#ffd24a'), V('カラオケ','#9c1f6e','#ffffff'),
+            V('薬 局','#0d7a4a','#ffffff'), V('うどん','#e0a41b','#3a2600'), V('美容室','#7a2ea0','#ffffff'),
+            V('喫茶','#5a3b1e','#f5e6c8'), V('質','#1a1a1a','#ffcf2b'), V('寿司','#0e5a86','#ffffff') ],
+    flat:[ H('沖縄そば','#e5451f','#ffffff'), H('OPEN 営業中','#0a7d3c','#ffffff'), H('コンビニ 24h','#1553b0','#ffffff'),
+           H('DRUG 薬','#e59f0f','#3a2600'), H('CAFE 珈琲','#5a3b1e','#f5e6c8'), H('ゆいレール','#0072bc','#ffffff') ],
+  };
+  return _signDefs;
+}
+// orient so the plane's front (+Z) faces `fwd`; builds a right-handed basis (never mirrors the texture)
+function orientFace(mesh, fwd, up){
+  const z=fwd.clone().normalize();
+  const x=new THREE.Vector3().crossVectors(up, z).normalize();
+  const y=new THREE.Vector3().crossVectors(z, x).normalize();
+  const m=new THREE.Matrix4().makeBasis(x,y,z);
+  mesh.quaternion.setFromRotationMatrix(m);
+}
+// place one sign on a wall. nrm points from wall toward the road; tang runs along the wall.
+function placeSign(wx, wz, nrm, tang, maxH, kind, defs){
+  const list = kind==='blade'? defs.blade : defs.flat;
+  const def = list[(Math.random()*list.length)|0];
+  const nrmV=new THREE.Vector3(nrm[0],0,nrm[1]);
+  const tanV=new THREE.Vector3(tang[0],0,tang[1]);
+  const mkMat=()=> new THREE.MeshStandardMaterial({ map:def.tex, emissive:0xffffff, emissiveMap:def.tex, emissiveIntensity:0.16, roughness:0.72, side:THREE.FrontSide });
+  if (kind==='blade'){
+    const stick=0.72, signH=2.0+Math.random()*1.3;
+    const top=Math.min(maxH-0.5, 8.5);
+    const mount=Math.max(2.6, top - signH*0.5 - Math.random()*Math.max(0.1, top-3.5));
+    const px=wx+nrm[0]*(stick/2+0.05), pz=wz+nrm[1]*(stick/2+0.05);
+    // two back-to-back panels so text reads correctly from BOTH directions along the street
+    for (const dirV of [tanV, tanV.clone().negate()]){
+      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(stick, signH), mkMat());
+      orientFace(mesh, dirV, SIGN_UP);               // width(stick) along nrm, front faces up/down street
+      mesh.position.set(px, mount, pz);
+      mesh.castShadow=true; mesh.receiveShadow=true; mesh.name='sign';
+      world.add(mesh);
+    }
+    return true;
+  } else {
+    const h=1.0+Math.random()*0.5, w=def.aspect*h;
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w, h), mkMat());
+    orientFace(mesh, nrmV, SIGN_UP);                 // flush on wall, front faces the road
+    const mount=1.7+Math.random()*1.3;
+    mesh.position.set(wx+nrm[0]*0.07, mount, wz+nrm[1]*0.07);
+    mesh.receiveShadow=true; mesh.castShadow=false; mesh.name='sign';
+    world.add(mesh); return true;
+  }
+}
+// scatter signs along the shop frontages of the main streets
+function addStreetSigns(roadWays, boxes){
+  if (!boxes.length) return;
+  const defs=signDefs();
+  const findBox=(x,z)=>{ for (const b of boxes){ if(x>=b.minx-0.4&&x<=b.maxx+0.4&&z>=b.minz-0.4&&z<=b.maxz+0.4) return b; } return null; };
+  const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+  const mains=roadWays.filter(rw=>['primary','secondary','tertiary','residential'].includes(rw.tags.highway));
+  // nearest to origin first, so density is highest where the user starts
+  mains.sort((A,B)=>{ const a=A.pts[0],b=B.pts[0]; return (a[0]*a[0]+a[1]*a[1])-(b[0]*b[0]+b[1]*b[1]); });
+  const MAX=190; let count=0;
+  for (const rw of mains){
+    if (count>=MAX) break;
+    const pts=rw.pts; const hw=roadWidth(rw.tags)/2;
+    let acc=0, nextAt=7+Math.random()*7, side=1;
+    for (let i=0;i<pts.length-1 && count<MAX;i++){
+      let x1=pts[i][0],z1=pts[i][1],x2=pts[i+1][0],z2=pts[i+1][1];
+      let dx=x2-x1,dz=z2-z1; const len=Math.hypot(dx,dz); if(len<0.1) continue; dx/=len;dz/=len;
+      let d=0;
+      while (d<len && count<MAX){
+        if (acc+(len-d) < nextAt){ acc+=len-d; break; }
+        d+=nextAt-acc; acc=0; nextAt=8+Math.random()*9; side=-side;
+        const rx=x1+dx*d, rz=z1+dz*d;
+        const perp=[-dz*side, dx*side];
+        const b=findBox(rx+perp[0]*(hw+1.4), rz+perp[1]*(hw+1.4));
+        if (!b || b.h<3) continue;
+        const wx=clamp(rx,b.minx,b.maxx), wz=clamp(rz,b.minz,b.maxz);
+        let nx=rx-wx, nz=rz-wz; const nl=Math.hypot(nx,nz);
+        if (nl<0.05){ nx=-perp[0]; nz=-perp[1]; } else { nx/=nl; nz/=nl; }
+        const nrm=[nx,nz], tang=[-nz,nx];
+        placeSign(wx, wz, nrm, tang, b.h, 'blade', defs); count++;
+        if (b.h>=3 && Math.random()<0.5 && count<MAX){ placeSign(wx, wz, nrm, tang, b.h, 'flat', defs); count++; }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- cars
+function makeCar(){
+  const g = new THREE.Group();
+  const hue = Math.random();
+  const bodyColor = new THREE.Color().setHSL(hue, 0.6, 0.5);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.1, 4.4),
+    new THREE.MeshStandardMaterial({ color:bodyColor, roughness:0.4, metalness:0.3 }));
+  body.position.y=0.8; body.castShadow=true; g.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.9, 2.2),
+    new THREE.MeshStandardMaterial({ color:0x111820, roughness:0.2, metalness:0.1 }));
+  cabin.position.set(0,1.55,-0.2); cabin.castShadow=true; g.add(cabin);
+  const wheelGeo = new THREE.CylinderGeometry(0.42,0.42,0.4,10);
+  const wheelMat = new THREE.MeshStandardMaterial({ color:0x0a0a0a, roughness:0.8 });
+  for (const [wx,wz] of [[0.95,1.4],[-0.95,1.4],[0.95,-1.4],[-0.95,-1.4]]){
+    const wl = new THREE.Mesh(wheelGeo, wheelMat);
+    wl.rotation.z=Math.PI/2; wl.position.set(wx,0.42,wz); g.add(wl);
+  }
+  return g;
+}
+function spawnCars(n){
+  cars.forEach(c=>world.remove(c.obj)); cars=[];
+  if (!ROADS_FOR_CARS.length) return;
+  for (let i=0;i<n;i++){
+    const road = ROADS_FOR_CARS[(Math.random()*ROADS_FOR_CARS.length)|0];
+    if (road.length<2) continue;
+    const obj = makeCar();
+    world.add(obj);
+    cars.push({ obj, road, seg:(Math.random()*(road.length-1))|0, t:Math.random(), speed:6+Math.random()*10, dir: Math.random()<0.5?1:-1 });
+  }
+}
+function updateCars(dt){
+  for (const c of cars){
+    const road=c.road;
+    let a=road[c.seg], b=road[c.seg+1];
+    if (!a||!b){ c.seg=0; continue; }
+    const segLen=Math.hypot(b[0]-a[0], b[1]-a[1]) || 1;
+    c.t += (c.speed*dt/segLen)*c.dir;
+    while (c.t>1){ c.t-=1; c.seg+=1; if (c.seg>=road.length-1){ c.seg=road.length-2; c.dir=-1; c.t=1; } a=road[c.seg]; b=road[c.seg+1]; if(!a||!b) break; }
+    while (c.t<0){ c.t+=1; c.seg-=1; if (c.seg<0){ c.seg=0; c.dir=1; c.t=0; } a=road[c.seg]; b=road[c.seg+1]; if(!a||!b) break; }
+    if (!a||!b) continue;
+    const x=a[0]+(b[0]-a[0])*c.t, z=a[1]+(b[1]-a[1])*c.t;
+    c.obj.position.set(x,0,z);
+    const ang=Math.atan2((b[0]-a[0])*c.dir, (b[1]-a[1])*c.dir);
+    c.obj.rotation.y=ang;
+  }
+}
+
+// ---------------------------------------------------------------- load flow
+async function loadPreset(key){
+  CURRENT = key;
+  const p = PRESETS[key];
+  ORIGIN = { lat:p.lat, lon:p.lon };
+  loadEl.classList.remove('hide');
+  // reset world
+  scene.remove(world); disposeGroup(world);
+  world = new THREE.Group(); scene.add(world);
+  cars=[]; buildingMeshes=[]; bldBoxes=[]; ROADS_FOR_CARS=[]; signals=[];
+  addGround();
+  camera.position.set(0,420,620); orbit.target.set(0,0,0);
+  try {
+    const osm = await fetchOSM(p);
+    setMsg('3D生成中…');
+    await new Promise(r=>setTimeout(r,16));
+    const { bCount, rCount } = buildWorld(osm);
+    if (carsOn) spawnCars(Math.min(46, Math.max(10, (ROADS_FOR_CARS.length*0.5)|0)));
+    statsEl.innerHTML = `📍 ${p.name}<br>🏢 建物 ${bCount.toLocaleString()} · 🛣 道路 ${rCount.toLocaleString()} · 🚗 車 ${cars.length}`;
+    applyToggles();
+    setTimeout(()=>loadEl.classList.add('hide'), 250);
+    toast(`${p.name} を読み込みました`);
+  } catch(err){
+    console.error(err);
+    setMsg('データ取得に失敗しました。再試行してください。');
+    statsEl.textContent = '読み込み失敗: '+(err.message||err);
+    setTimeout(()=>loadEl.classList.add('hide'), 1800);
+  }
+}
+function disposeGroup(g){
+  g.traverse(o=>{
+    if (o.geometry) o.geometry.dispose();
+    if (o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose()); }
+  });
+}
+
+// ---------------------------------------------------------------- toggles
+let shadowsOn=true, carsOn=true, wireOn=false, signsOn=true;
+function applyToggles(){
+  renderer.shadowMap.enabled = shadowsOn;
+  buildingMeshes.forEach(m=>{ m.castShadow=shadowsOn; });
+  dir.castShadow = shadowsOn;
+  const wire = world.getObjectByName('wire'); if (wire) wire.visible = wireOn;
+  cars.forEach(c=>c.obj.visible = carsOn);
+  world.traverse(o=>{ if(o.name==='sign') o.visible=signsOn; });
+  renderer.shadowMap.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------- UI wiring
+const locrow = document.getElementById('locrow');
+for (const [k,p] of Object.entries(PRESETS)){
+  const b=document.createElement('button');
+  b.className='chip'+(k===CURRENT?' on':''); b.textContent=p.name; b.dataset.k=k;
+  b.onclick=()=>{ if(k===CURRENT) return; [...locrow.children].forEach(c=>c.classList.remove('on')); b.classList.add('on'); loadPreset(k); };
+  locrow.appendChild(b);
+}
+const mOrbit=document.getElementById('mOrbit'), mWalk=document.getElementById('mWalk');
+mOrbit.onclick=()=>setMode('orbit');
+mWalk.onclick=()=>setMode('walk');
+function setMode(m){
+  if (m===mode){ if(m==='walk' && !walk.isLocked) walk.lock(); return; }
+  mode=m;
+  mOrbit.classList.toggle('on', m==='orbit');
+  mWalk.classList.toggle('on', m==='walk');
+  if (m==='walk'){
+    orbit.enabled=false;
+    // drop camera to a street point near origin
+    camera.position.set(0, 1.7, 40);
+    camera.lookAt(0,1.7,0);
+    walk.lock();
+    toast('クリックで開始 · WASD移動 · Escで終了');
+  } else {
+    orbit.enabled=true;
+    if (walk.isLocked) walk.unlock();
+    camera.position.set(0,420,620); orbit.target.set(0,0,0);
+  }
+}
+walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ mode='orbit'; mOrbit.classList.add('on'); mWalk.classList.remove('on'); orbit.enabled=true; } });
+
+document.getElementById('tShadow').onclick=(e)=>{ shadowsOn=!shadowsOn; e.target.classList.toggle('on',shadowsOn); applyToggles(); };
+document.getElementById('tCars').onclick=(e)=>{ carsOn=!carsOn; e.target.classList.toggle('on',carsOn); if(carsOn && !cars.length) spawnCars(28); applyToggles(); };
+document.getElementById('tSign').onclick=(e)=>{ signsOn=!signsOn; e.target.classList.toggle('on',signsOn); applyToggles(); };
+document.getElementById('tWire').onclick=(e)=>{ wireOn=!wireOn; e.target.classList.toggle('on',wireOn); applyToggles(); };
+
+// ---------------------------------------------------------------- walk movement + collision
+function moveWalk(dt){
+  const speed = (keys['ShiftLeft']||keys['ShiftRight']? 34:15);
+  const fwd = (keys['KeyW']?1:0)-(keys['KeyS']?1:0);
+  const strafe = (keys['KeyD']?1:0)-(keys['KeyA']?1:0);
+  walkVel.x -= walkVel.x*8*dt;
+  walkVel.z -= walkVel.z*8*dt;
+  if (fwd)    walkVel.z -= fwd*speed*dt;
+  if (strafe) walkVel.x += strafe*speed*dt;
+  const before = camera.position.clone();
+  walk.moveRight(walkVel.x*dt);
+  walk.moveForward(-walkVel.z*dt);
+  camera.position.y = 1.7;
+  // simple building collision: if inside a footprint, revert horizontal
+  const px=camera.position.x, pz=camera.position.z;
+  for (const b of bldBoxes){
+    if (px>b.minx-1 && px<b.maxx+1 && pz>b.minz-1 && pz<b.maxz+1){
+      camera.position.x=before.x; camera.position.z=before.z; break;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- resize
+function onResize(){
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+}
+addEventListener('resize', onResize);
+addEventListener('orientationchange', ()=>setTimeout(onResize,200));
+
+// ---------------------------------------------------------------- loop
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (mode==='orbit'){ orbit.update(); }
+  else if (walk.isLocked){ moveWalk(dt); }
+  if (carsOn) updateCars(dt);
+  if (signals.length){ sigClock += dt; updateSignals(); }
+  // sun follows target near camera focus for crisp shadows
+  const focus = (mode==='orbit')? orbit.target : camera.position;
+  dir.position.set(focus.x + sun.x*1200, sun.y*1200, focus.z + sun.z*1200);
+  dir.target.position.set(focus.x, 0, focus.z);
+  // compass
+  const yaw = Math.atan2(camera.matrix.elements[8], camera.matrix.elements[10]);
+  needle.style.transform = `rotate(${yaw}rad)`;
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---------------------------------------------------------------- go
+loadPreset(CURRENT);
+window.__world = { scene, camera, renderer, orbit, PRESETS, loadPreset:(k)=>loadPreset(k), get cars(){return cars;}, get boxes(){return bldBoxes;}, get signals(){return signals;} };
+</script>
+</body>
+</html>
