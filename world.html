@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>沖縄 3D ワールド</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-text-size-adjust: 100%; }
+  html, body { height: 100%; overflow: hidden; background: #0b1020; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* ---- loading ---- */
+  #load {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; background: radial-gradient(circle at 50% 35%, #16233f 0%, #0b1020 70%);
+    color: #e8eefc; transition: opacity .6s ease;
+  }
+  #load.hide { opacity: 0; pointer-events: none; }
+  #load .ring {
+    width: 54px; height: 54px; border-radius: 50%;
+    border: 4px solid rgba(255,255,255,.15); border-top-color: #59b0ff;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #load h1 { font-size: 18px; font-weight: 700; letter-spacing: .06em; }
+  #load #lmsg { font-size: 13px; opacity: .7; min-height: 18px; }
+
+  /* ---- HUD ---- */
+  #hud {
+    position: fixed; left: 12px; top: 12px; z-index: 20;
+    display: flex; flex-direction: column; gap: 8px; max-width: min(92vw, 320px);
+  }
+  .panel {
+    background: rgba(14,22,40,.82); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 14px;
+    padding: 10px 12px; color: #eaf0fb; box-shadow: 0 8px 30px rgba(0,0,0,.35);
+  }
+  #title { font-size: 14px; font-weight: 700; letter-spacing: .04em; display: flex; align-items: center; gap: 8px; }
+  #title small { font-weight: 400; opacity: .6; font-size: 11px; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  button.chip {
+    appearance: none; border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.06); color: #dbe6fb;
+    border-radius: 999px; padding: 6px 11px; font-size: 12px; cursor: pointer;
+    transition: background .15s, border-color .15s, transform .05s; white-space: nowrap;
+  }
+  button.chip:hover { background: rgba(89,176,255,.22); border-color: rgba(89,176,255,.5); }
+  button.chip:active { transform: translateY(1px); }
+  button.chip.on { background: #2f7fe0; border-color: #58a6ff; color: #fff; }
+  #stats { font-size: 11px; opacity: .72; margin-top: 8px; line-height: 1.5; }
+
+  #help {
+    position: fixed; right: 12px; bottom: 12px; z-index: 20;
+    font-size: 11px; line-height: 1.7; text-align: right; color: #cdd8ee;
+    text-shadow: 0 1px 4px rgba(0,0,0,.6); pointer-events: none;
+  }
+  #help b { color: #7fc0ff; }
+
+  #compass {
+    position: fixed; right: 14px; top: 14px; z-index: 20;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(14,22,40,.8); border: 1px solid rgba(255,255,255,.14);
+    display: flex; align-items: center; justify-content: center; pointer-events: none;
+  }
+  #compass .needle { width: 4px; height: 34px; position: relative; transform-origin: 50% 50%; }
+  #compass .needle::before { content:""; position:absolute; top:0; left:0; width:4px; height:17px; background:#ff5a5a; border-radius:2px; }
+  #compass .needle::after  { content:""; position:absolute; bottom:0; left:0; width:4px; height:17px; background:#dfe7f5; border-radius:2px; }
+  #compass span { position:absolute; top:2px; font-size:9px; color:#ff8f8f; font-weight:700; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    z-index: 30; background: rgba(20,30,52,.94); color: #eef4ff;
+    border: 1px solid rgba(255,255,255,.14); border-radius: 10px;
+    padding: 9px 15px; font-size: 12.5px; opacity: 0; transition: opacity .3s;
+    pointer-events: none; max-width: 88vw; text-align: center;
+  }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 560px) {
+    #help { display: none; }
+    #hud { max-width: 78vw; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="load">
+  <div class="ring"></div>
+  <h1>沖縄 3D ワールド</h1>
+  <div id="lmsg">起動中…</div>
+</div>
+
+<div id="hud">
+  <div class="panel">
+    <div id="title">🌏 沖縄 3D ワールド <small>OSM · Three.js</small></div>
+    <div class="row" id="locrow"></div>
+    <div class="row">
+      <button class="chip on" id="mOrbit">🛰 上空ビュー</button>
+      <button class="chip" id="mWalk">🚶 歩行ビュー</button>
+    </div>
+    <div class="row">
+      <button class="chip on" id="tShadow">影</button>
+      <button class="chip on" id="tCars">車</button>
+      <button class="chip on" id="tSign">看板</button>
+      <button class="chip" id="tWire">枠線</button>
+    </div>
+    <div id="stats">読み込み中…</div>
+  </div>
+</div>
+
+<div id="compass"><div class="needle" id="needle"></div><span>N</span></div>
+
+<div id="help">
+  <div><b>上空:</b> ドラッグ=回転 / ホイール=ズーム / 右ドラッグ=移動</div>
+  <div><b>歩行:</b> クリックで開始 · <b>WASD</b> 移動 · マウス=視線 · <b>Shift</b> 走る · <b>Esc</b> 終了</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+// ---------------------------------------------------------------- presets
+const PRESETS = {
+  kokusai: { name: '国際通り', lat: 26.2145, lon: 127.6905, radius: 620 },
+  shuri:   { name: '首里城',   lat: 26.2172, lon: 127.7195, radius: 620 },
+  port:    { name: '那覇港',   lat: 26.2140, lon: 127.6650, radius: 700 },
+  american:{ name: '美浜(北谷)', lat: 26.3155, lon: 127.7580, radius: 680 },
+};
+let CURRENT = 'kokusai';
+
+// ---------------------------------------------------------------- dom
+const lmsg  = document.getElementById('lmsg');
+const loadEl= document.getElementById('load');
+const statsEl = document.getElementById('stats');
+const toastEl = document.getElementById('toast');
+const needle = document.getElementById('needle');
+let toastT;
+function toast(m){ toastEl.textContent=m; toastEl.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>toastEl.classList.remove('show'),2600); }
+function setMsg(m){ lmsg.textContent=m; }
+
+// ---------------------------------------------------------------- renderer / scene
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xcfe0f2, 700, 2600);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.5, 8000);
+camera.position.set(0, 420, 620);
+
+// ---- sky + sun
+const sky = new Sky(); sky.scale.setScalar(12000); scene.add(sky);
+const sun = new THREE.Vector3();
+const skyU = sky.material.uniforms;
+skyU.turbidity.value = 6; skyU.rayleigh.value = 1.4;
+skyU.mieCoefficient.value = 0.006; skyU.mieDirectionalG.value = 0.8;
+function setSun(elevDeg, aziDeg){
+  const phi = THREE.MathUtils.degToRad(90 - elevDeg);
+  const theta = THREE.MathUtils.degToRad(aziDeg);
+  sun.setFromSphericalCoords(1, phi, theta);
+  skyU.sunPosition.value.copy(sun);
+}
+setSun(34, 155);
+
+const hemi = new THREE.HemisphereLight(0xdcecff, 0x6a7060, 1.25);
+scene.add(hemi);
+const amb = new THREE.AmbientLight(0xbcd0ea, 0.35);
+scene.add(amb);
+const dir = new THREE.DirectionalLight(0xfff4e2, 2.0);
+dir.position.copy(sun).multiplyScalar(1400);
+dir.castShadow = true;
+dir.shadow.mapSize.set(2048, 2048);
+const S = 900;
+dir.shadow.camera.left=-S; dir.shadow.camera.right=S; dir.shadow.camera.top=S; dir.shadow.camera.bottom=-S;
+dir.shadow.camera.near=100; dir.shadow.camera.far=4000; dir.shadow.bias=-0.0004;
+scene.add(dir);
+scene.add(dir.target);
+
+// ---------------------------------------------------------------- controls
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+orbit.maxPolarAngle = Math.PI*0.495; orbit.minDistance = 25; orbit.maxDistance = 2200;
+orbit.target.set(0, 0, 0);
+
+const walk = new PointerLockControls(camera, renderer.domElement);
+const keys = {};
+addEventListener('keydown', e=>{ keys[e.code]=true; });
+addEventListener('keyup',   e=>{ keys[e.code]=false; });
+let mode = 'orbit';
+const walkVel = new THREE.Vector3();
+
+// ---------------------------------------------------------------- projection
+let ORIGIN = { lat: PRESETS[CURRENT].lat, lon: PRESETS[CURRENT].lon };
+const R = 111320;
+function toLocal(lon, lat){
+  const x = (lon - ORIGIN.lon) * R * Math.cos(ORIGIN.lat*Math.PI/180);
+  const z = -(lat - ORIGIN.lat) * 110540;
+  return [x, z];
+}
+
+// ---------------------------------------------------------------- world container
+let world = new THREE.Group();
+scene.add(world);
+let cars = [];
+let buildingMeshes = [];   // for wireframe toggle
+let bldBoxes = [];         // for walk collision {minx,maxx,minz,maxz}
+let signals = [];          // {s, group} traffic lights to animate
+let sigClock = 0;
+
+// ground base plane (below everything)
+function addGround(){
+  const g = new THREE.PlaneGeometry(6000, 6000);
+  const m = new THREE.MeshStandardMaterial({ color: 0x2b3b31, roughness: 1 });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.rotation.x = -Math.PI/2; mesh.position.y = -0.4;
+  mesh.receiveShadow = true;
+  world.add(mesh);
+}
+
+// ---------------------------------------------------------------- overpass
+function bbox(p){
+  const dLat = p.radius/110540;
+  const dLon = p.radius/(R*Math.cos(p.lat*Math.PI/180));
+  return [p.lat-dLat, p.lon-dLon, p.lat+dLat, p.lon+dLon]; // s,w,n,e
+}
+function query(p){
+  const [s,w,n,e] = bbox(p);
+  const bb = `${s},${w},${n},${e}`;
+  return `[out:json][timeout:60];(` +
+    `way["building"](${bb});` +
+    `way["highway"](${bb});` +
+    `way["natural"="water"](${bb});` +
+    `way["waterway"~"riverbank|canal|stream|river"](${bb});` +
+    `way["leisure"~"park|garden|pitch|playground"](${bb});` +
+    `way["natural"~"wood|scrub|grassland|beach|sand"](${bb});` +
+    `way["landuse"~"grass|forest|recreation_ground|cemetery"](${bb});` +
+  `);out body;>;out skel qt;`;
+}
+const ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
+async function fetchOSM(p){
+  const cacheKey = 'osm_'+CURRENT+'_v2';
+  try {
+    const c = localStorage.getItem(cacheKey);
+    if (c) { setMsg('キャッシュから読込…'); return JSON.parse(c); }
+  } catch(_){}
+  const body = 'data='+encodeURIComponent(query(p));
+  let lastErr;
+  for (let i=0;i<ENDPOINTS.length;i++){
+    try {
+      setMsg(`地図データ取得中… (${i+1})`);
+      const res = await fetch(ENDPOINTS[i], { method:'POST', body, headers:{'Content-Type':'application/x-www-form-urlencoded'} });
+      if (!res.ok) throw new Error('HTTP '+res.status);
+      const json = await res.json();
+      try { localStorage.setItem(cacheKey, JSON.stringify(json)); } catch(_){}
+      return json;
+    } catch(err){ lastErr = err; }
+  }
+  throw lastErr || new Error('overpass failed');
+}
+
+// ---------------------------------------------------------------- build geometry
+function heightOf(tags){
+  if (tags.height){ const h=parseFloat(tags.height); if(!isNaN(h)) return h; }
+  if (tags['building:levels']){ const l=parseFloat(tags['building:levels']); if(!isNaN(l)) return l*3.3+1; }
+  // vary default a little by building type
+  if (tags.building==='house' || tags.building==='detached') return 6 + Math.random()*2;
+  if (tags.building==='retail' || tags.building==='commercial') return 12 + Math.random()*10;
+  return 8 + Math.random()*6;
+}
+function roadWidth(tags){
+  const h = tags.highway;
+  if (h==='motorway'||h==='trunk') return 12;
+  if (h==='primary') return 10;
+  if (h==='secondary') return 8;
+  if (h==='tertiary') return 6.5;
+  if (h==='residential'||h==='unclassified'||h==='living_street') return 5;
+  if (h==='service') return 3.5;
+  if (h==='footway'||h==='path'||h==='pedestrian'||h==='steps') return 2.2;
+  return 4;
+}
+
+function buildWorld(osm){
+  // node map
+  const nodes = new Map();
+  for (const el of osm.elements) if (el.type==='node') nodes.set(el.id, el);
+  const ways = osm.elements.filter(el=>el.type==='way' && el.nodes && el.nodes.length>=2);
+
+  const ringWithIds = (way)=>{
+    const pts=[], ids=[];
+    for (const id of way.nodes){ const nd=nodes.get(id); if(nd){ const [x,z]=toLocal(nd.lon,nd.lat); pts.push([x,z]); ids.push(id); } }
+    return { pts, ids };
+  };
+
+  // --- classify
+  const bldGeoms=[]; const bldColors=[];
+  const roadRibbons=[];
+  const areaMeshes=[]; // parks/water flat polys
+  const roadWays=[];   // {tags, pts, ids} for markings + signals
+  const nodeCount=new Map(); // node id -> # of road ways through it
+  const nodeLocal=new Map(); // node id -> [x,z]
+
+  let bCount=0, rCount=0;
+
+  for (const way of ways){
+    const t = way.tags || {};
+    const { pts, ids } = ringWithIds(way);
+    if (pts.length<2) continue;
+
+    if (t.building){
+      if (pts.length<4) continue;
+      const shape = new THREE.Shape();
+      shape.moveTo(pts[0][0], pts[0][1]);
+      for (let i=1;i<pts.length;i++) shape.lineTo(pts[i][0], pts[i][1]);
+      const h = Math.min(heightOf(t), 160);
+      let geo;
+      try { geo = new THREE.ExtrudeGeometry(shape, { depth:h, bevelEnabled:false }); }
+      catch(_) { continue; }
+      geo.rotateX(-Math.PI/2);      // shape XY plane -> XZ ground, extrude up
+      geo.computeVertexNormals();
+      // per-building tint
+      const base = new THREE.Color().setHSL(0.09 + Math.random()*0.05, 0.10, 0.52 + Math.min(h/240,0.28) + (Math.random()-0.5)*0.06);
+      const cnt = geo.attributes.position.count;
+      const col = new Float32Array(cnt*3);
+      for (let i=0;i<cnt;i++){ col[i*3]=base.r; col[i*3+1]=base.g; col[i*3+2]=base.b; }
+      geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+      bldGeoms.push(geo);
+      bCount++;
+      // collision box (+ height for sign mounting)
+      let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
+      for (const pp of pts){ minx=Math.min(minx,pp[0]); maxx=Math.max(maxx,pp[0]); minz=Math.min(minz,pp[1]); maxz=Math.max(maxz,pp[1]); }
+      bldBoxes.push({minx,maxx,minz,maxz,h});
+    }
+    else if (t.highway){
+      const w = roadWidth(t);
+      const geo = ribbon(pts, w);
+      if (geo) { roadRibbons.push(geo); rCount++; }
+      roadWays.push({ tags:t, pts, ids });
+      for (let k=0;k<ids.length;k++){
+        const id=ids[k];
+        nodeCount.set(id, (nodeCount.get(id)||0)+1);
+        if (!nodeLocal.has(id)) nodeLocal.set(id, pts[k]);
+      }
+      // remember main roads for cars
+      if (['primary','secondary','tertiary','residential','trunk'].includes(t.highway) && pts.length>=3)
+        ROADS_FOR_CARS.push(pts);
+    }
+    else if (t.natural==='water' || t.waterway || t.landuse==='basin'){
+      const m = flatPoly(pts, 0x2f6f9e, 0.05); if (m) areaMeshes.push(m);
+    }
+    else if (t.leisure || t.natural || t.landuse){
+      const green = (t.leisure==='pitch'||t.natural==='beach'||t.natural==='sand') ? 0xcbb87a : 0x3f7a43;
+      const m = flatPoly(pts, green, 0.08); if (m) areaMeshes.push(m);
+    }
+  }
+
+  // merge + add areas (parks/water) first (lowest)
+  for (const m of areaMeshes){ m.receiveShadow=true; world.add(m); }
+
+  // roads
+  if (roadRibbons.length){
+    const merged = mergeGeometries(roadRibbons, false);
+    const roadMat = new THREE.MeshStandardMaterial({ color:0x2f333a, roughness:0.98 });
+    const roadMesh = new THREE.Mesh(merged, roadMat);
+    roadMesh.receiveShadow = true;
+    world.add(roadMesh);
+  }
+
+  // lane markings, crosswalks, traffic signals
+  buildRoadDetails(roadWays, nodeCount, nodeLocal);
+
+  // SVG shop signs on the building walls facing the streets
+  addStreetSigns(roadWays, bldBoxes);
+
+  // buildings
+  if (bldGeoms.length){
+    const merged = mergeGeometries(bldGeoms, false);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors:true, roughness:0.82, metalness:0.04 });
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    world.add(mesh);
+    buildingMeshes.push(mesh);
+    // wireframe overlay (hidden by default)
+    const wire = new THREE.LineSegments(new THREE.EdgesGeometry(merged, 30), new THREE.LineBasicMaterial({ color:0x0a0e16, transparent:true, opacity:0.25 }));
+    wire.visible=false; wire.name='wire'; world.add(wire);
+  }
+
+  return { bCount, rCount };
+}
+
+let ROADS_FOR_CARS = [];
+
+// flat filled polygon (parks, water)
+function flatPoly(pts, color, y){
+  if (pts.length<4) return null;
+  const shape = new THREE.Shape();
+  shape.moveTo(pts[0][0], pts[0][1]);
+  for (let i=1;i<pts.length;i++) shape.lineTo(pts[i][0], pts[i][1]);
+  let geo;
+  try { geo = new THREE.ShapeGeometry(shape); } catch(_){ return null; }
+  geo.rotateX(-Math.PI/2);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness:0.9 }));
+  mesh.position.y = y;
+  return mesh;
+}
+
+// road ribbon from a polyline
+function ribbon(pts, width){
+  const hw = width/2;
+  const positions=[]; const indices=[];
+  let vi=0;
+  for (let i=0;i<pts.length-1;i++){
+    const [x1,z1]=pts[i], [x2,z2]=pts[i+1];
+    let dx=x2-x1, dz=z2-z1; const len=Math.hypot(dx,dz); if(len<0.01) continue;
+    dx/=len; dz/=len;
+    const nx=-dz*hw, nz=dx*hw;
+    positions.push(x1+nx,0,z1+nz,  x1-nx,0,z1-nz,  x2+nx,0,z2+nz,  x2-nx,0,z2-nz);
+    indices.push(vi,vi+1,vi+2,  vi+1,vi+3,vi+2);
+    vi+=4;
+  }
+  if (!positions.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  geo.translate(0,0.06,0);
+  return geo;
+}
+
+// ---------------------------------------------------------------- road markings
+// a thin line following a polyline; supports sideways offset + dashing
+function lineRibbon(pts, halfW, opt){
+  opt = opt || {};
+  const yOff = opt.yOff ?? 0.12;
+  const off = opt.offset || 0;
+  const positions=[]; const indices=[]; let vi=0;
+  for (let i=0;i<pts.length-1;i++){
+    let x1=pts[i][0], z1=pts[i][1], x2=pts[i+1][0], z2=pts[i+1][1];
+    let dx=x2-x1, dz=z2-z1; const len=Math.hypot(dx,dz); if(len<0.02) continue;
+    dx/=len; dz/=len;
+    // shift whole segment sideways by `off` along its normal
+    const ox=-dz*off, oz=dx*off; x1+=ox; z1+=oz; x2+=ox; z2+=oz;
+    const nx=-dz*halfW, nz=dx*halfW;
+    const emit=(ax,az,bx,bz)=>{
+      positions.push(ax+nx,yOff,az+nz, ax-nx,yOff,az-nz, bx+nx,yOff,bz+nz, bx-nx,yOff,bz-nz);
+      indices.push(vi,vi+1,vi+2, vi+1,vi+3,vi+2); vi+=4;
+    };
+    if (opt.dash){
+      const period=opt.dashLen+opt.gapLen; let s=0;
+      while (s<len){
+        const e=Math.min(len, s+opt.dashLen);
+        emit(x1+dx*s, z1+dz*s, x1+dx*e, z1+dz*e);
+        s+=period;
+      }
+    } else {
+      emit(x1,z1,x2,z2);
+    }
+  }
+  if (!positions.length) return null;
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  g.setIndex(indices); g.computeVertexNormals();
+  return g;
+}
+
+// zebra crosswalk across a road arm (bars perpendicular to travel dir)
+function zebra(center, dir, roadHalf){
+  const perp=[-dir[1], dir[0]];
+  const barW=0.45, gap=0.55, depth=roadHalf*2; // depth = across-road span
+  const span=roadHalf*2 - 0.4;
+  const n=Math.max(2, Math.floor(span/(barW+gap)));
+  const positions=[]; const indices=[]; let vi=0;
+  for (let i=0;i<n;i++){
+    const o=(i-(n-1)/2)*(barW+gap);              // step along travel dir
+    const cx=center[0]+dir[0]*o, cz=center[1]+dir[1]*o;
+    const ax=perp[0]*depth/2, az=perp[1]*depth/2; // half length across road
+    const bx=dir[0]*barW/2,   bz=dir[1]*barW/2;   // half width along dir
+    positions.push(
+      cx+ax+bx,0.14,cz+az+bz,  cx-ax+bx,0.14,cz-az+bz,
+      cx+ax-bx,0.14,cz+az-bz,  cx-ax-bx,0.14,cz-az-bz);
+    indices.push(vi,vi+1,vi+2, vi+1,vi+3,vi+2); vi+=4;
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions,3));
+  g.setIndex(indices); g.computeVertexNormals();
+  return g;
+}
+
+// merge arm directions that are nearly collinear (same street through a node)
+function dedupeArms(arms){
+  const out=[];
+  for (const a of arms){
+    const al=Math.hypot(a[0],a[1]); if(al<0.01) continue;
+    const ang=Math.atan2(a[1],a[0]); let dup=false;
+    for (const o of out){ const oa=Math.atan2(o[1],o[0]); let d=Math.abs(ang-oa); if(d>Math.PI)d=2*Math.PI-d; if(d<0.28){dup=true;break;} }
+    if(!dup) out.push(a);
+  }
+  return out;
+}
+
+// a Japanese-style horizontal traffic signal (green | yellow | red), head faces +Z
+function makeSignalJP(armLen){
+  const g=new THREE.Group();
+  const metal=new THREE.MeshStandardMaterial({ color:0x9098a0, roughness:0.5, metalness:0.55 });
+  const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.12,5.2,12), metal);
+  pole.position.set(0,2.6,0); g.add(pole);
+  const arm=new THREE.Mesh(new THREE.BoxGeometry(armLen,0.12,0.12), metal);
+  arm.position.set(-armLen/2,5.05,0); g.add(arm);
+  const headX=-armLen+0.35;
+  const back=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.58,0.06), new THREE.MeshStandardMaterial({ color:0x0e1013, roughness:0.7 }));
+  back.position.set(headX,4.98,-0.17); g.add(back);
+  const housing=new THREE.Mesh(new THREE.BoxGeometry(1.24,0.46,0.32), new THREE.MeshStandardMaterial({ color:0x22262c, roughness:0.6 }));
+  housing.position.set(headX,4.98,0); g.add(housing);
+  const visorMat=new THREE.MeshStandardMaterial({ color:0x15181c, roughness:0.7 });
+  const mk=(x,color)=>{
+    const m=new THREE.MeshStandardMaterial({ color:0x0c0c0c, emissive:color, emissiveIntensity:0, roughness:0.35 });
+    const s=new THREE.Mesh(new THREE.SphereGeometry(0.155,16,16), m);
+    s.position.set(headX+x,4.98,0.17); g.add(s);
+    const visor=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.19,0.12,14,1,true,0,Math.PI), visorMat);
+    visor.rotation.x=Math.PI/2; visor.position.set(headX+x,5.06,0.2); g.add(visor);
+    return s;
+  };
+  // Japan horizontal order (driver's view): green left, yellow center, red right
+  const green=mk(-0.37,0x25e070), yellow=mk(0,0xffce38), red=mk(0.37,0xff3030);
+  g.traverse(o=>{ if(o.isMesh) o.castShadow=false; });
+  pole.castShadow=true;
+  return { group3:g, r:red, y:yellow, g:green };
+}
+
+// build all lane markings + crosswalks + signals from the road network
+function buildRoadDetails(roadWays, nodeCount, nodeLocal){
+  const whiteGeoms=[], yellowGeoms=[];
+
+  // --- lane / edge markings
+  for (const rw of roadWays){
+    const t=rw.tags, pts=rw.pts; if(pts.length<2) continue;
+    const cls=t.highway; const w=roadWidth(t); const hw=w/2;
+    const major=(cls==='primary'||cls==='secondary'||cls==='trunk');
+    const mid=(cls==='tertiary'||cls==='residential'||cls==='unclassified'||cls==='living_street');
+    if (major){ const g=lineRibbon(pts,0.11,{dash:false,yOff:0.13}); if(g) yellowGeoms.push(g); }
+    else if (mid && w>=5){ const g=lineRibbon(pts,0.09,{dash:true,dashLen:3,gapLen:4.5,yOff:0.12}); if(g) whiteGeoms.push(g); }
+    if (w>=7){
+      const gl=lineRibbon(pts,0.08,{dash:false,yOff:0.12,offset:(hw-0.35)});
+      const gr=lineRibbon(pts,0.08,{dash:false,yOff:0.12,offset:-(hw-0.35)});
+      if(gl) whiteGeoms.push(gl); if(gr) whiteGeoms.push(gr);
+    }
+  }
+
+  // --- intersections
+  const majorNode=new Set();
+  for (const rw of roadWays){
+    if(['primary','secondary','tertiary','trunk'].includes(rw.tags.highway))
+      for(const id of rw.ids) majorNode.add(id);
+  }
+  const nodeArms=new Map(), nodeHalf=new Map();
+  for (const rw of roadWays){
+    const {pts,ids}=rw; const hw=roadWidth(rw.tags)/2;
+    for (let k=0;k<ids.length;k++){
+      const id=ids[k]; if((nodeCount.get(id)||0)<3) continue;
+      let arms=nodeArms.get(id); if(!arms){arms=[]; nodeArms.set(id,arms);}
+      nodeHalf.set(id, Math.max(nodeHalf.get(id)||0, hw));
+      if(k>0){ const p=pts[k],q=pts[k-1]; arms.push([q[0]-p[0],q[1]-p[1]]); }
+      if(k<pts.length-1){ const p=pts[k],q=pts[k+1]; arms.push([q[0]-p[0],q[1]-p[1]]); }
+    }
+  }
+  // signalize the major intersections nearest the origin
+  const cand=[];
+  for (const [id,arms] of nodeArms){ if(majorNode.has(id) && (nodeCount.get(id)||0)>=3) cand.push(id); }
+  cand.sort((a,b)=>{ const pa=nodeLocal.get(a),pb=nodeLocal.get(b); return (pa[0]*pa[0]+pa[1]*pa[1])-(pb[0]*pb[0]+pb[1]*pb[1]); });
+  const MAXI=Math.min(cand.length, 52);
+  for (let ci=0; ci<MAXI; ci++){
+    const id=cand[ci]; const c=nodeLocal.get(id);
+    const arms=dedupeArms(nodeArms.get(id)); const hw=Math.max(nodeHalf.get(id)||4, 4);
+    for (const arm of arms){
+      const len=Math.hypot(arm[0],arm[1]); if(len<6) continue;
+      const dir=[arm[0]/len, arm[1]/len];
+      const stop=hw+1.3;
+      const cwCenter=[c[0]+dir[0]*stop, c[1]+dir[1]*stop];
+      const zg=zebra(cwCenter, dir, hw); if(zg) whiteGeoms.push(zg);
+      // signal at the near-left curb, arm reaching over the road, head facing +dir (oncoming)
+      const perp=[dir[1], -dir[0]];
+      const px=c[0]+dir[0]*(stop+0.4)+perp[0]*(hw+0.7);
+      const pz=c[1]+dir[1]*(stop+0.4)+perp[1]*(hw+0.7);
+      const s=makeSignalJP(hw+0.9);
+      s.group3.position.set(px,0,pz);
+      s.group3.rotation.y=Math.atan2(dir[0],dir[1]);
+      world.add(s.group3);
+      const angDeg=(((Math.atan2(dir[0],dir[1])*180/Math.PI)+360)%180);
+      signals.push({ s, group: angDeg<90?0:1 });
+    }
+  }
+
+  // --- merged marking meshes
+  if (whiteGeoms.length){
+    const m=mergeGeometries(whiteGeoms,false);
+    const mesh=new THREE.Mesh(m, new THREE.MeshStandardMaterial({ color:0xeef1f5, roughness:0.55, emissive:0x2a2d33, emissiveIntensity:0.2 }));
+    mesh.receiveShadow=false; world.add(mesh);
+  }
+  if (yellowGeoms.length){
+    const m=mergeGeometries(yellowGeoms,false);
+    const mesh=new THREE.Mesh(m, new THREE.MeshStandardMaterial({ color:0xf2c026, roughness:0.55, emissive:0x3a2c00, emissiveIntensity:0.25 }));
+    world.add(mesh);
+  }
+}
+
+// advance the signal cycle
+function updateSignals(){
+  const T=12;
+  for (const sig of signals){
+    let x=(sigClock + (sig.group?6:0)) % T;
+    const st = x<5 ? 'g' : (x<6.4 ? 'y' : 'r');
+    sig.s.g.material.emissiveIntensity = st==='g'?2.9:0.0;
+    sig.s.y.material.emissiveIntensity = st==='y'?2.9:0.0;
+    sig.s.r.material.emissiveIntensity = st==='r'?2.9:0.0;
+  }
+}
+
+// ---------------------------------------------------------------- SVG shop signs
+const SIGN_UP = new THREE.Vector3(0,1,0);
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// vertical Japanese blade sign (袖看板): characters stacked top→bottom
+function vSignSVG(text, bg, fg){
+  const chars=[...text]; const n=chars.length; const W=128, H=384, pad=16;
+  const step=(H-pad*2)/n; const fs=Math.min(step*0.82, W*0.66);
+  let t='';
+  for (let i=0;i<n;i++){
+    const cy=pad+step*(i+0.5);
+    t+=`<text x="${W/2}" y="${cy}" font-size="${fs.toFixed(1)}" fill="${fg}" font-family="'Hiragino Sans','Yu Gothic',sans-serif" font-weight="800" text-anchor="middle" dominant-baseline="central">${esc(chars[i])}</text>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" rx="9" fill="${bg}"/><rect x="5" y="5" width="${W-10}" height="${H-10}" rx="7" fill="none" stroke="${fg}" stroke-opacity="0.55" stroke-width="3"/>${t}</svg>`;
+}
+// horizontal storefront banner
+function hSignSVG(text, bg, fg){
+  const W=384, H=128;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="${W}" height="${H}" rx="10" fill="${bg}"/><rect x="6" y="6" width="${W-12}" height="${H-12}" rx="7" fill="none" stroke="${fg}" stroke-opacity="0.5" stroke-width="4"/><text x="${W/2}" y="${H/2}" font-size="62" fill="${fg}" font-family="'Hiragino Sans','Yu Gothic',sans-serif" font-weight="800" text-anchor="middle" dominant-baseline="central" textLength="${W-40}" lengthAdjust="spacingAndGlyphs">${esc(text)}</text></svg>`;
+}
+// rasterize an SVG string into a live texture (draws once the image decodes)
+function svgTexture(svg, w, h){
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h;
+  const ctx=cv.getContext('2d');
+  const tex=new THREE.CanvasTexture(cv);
+  tex.colorSpace=THREE.SRGBColorSpace; tex.anisotropy=4;
+  const img=new Image();
+  img.onload=()=>{ try{ ctx.clearRect(0,0,w,h); ctx.drawImage(img,0,0,w,h); tex.needsUpdate=true; }catch(_){} };
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  return tex;
+}
+let _signDefs=null;
+function signDefs(){
+  if (_signDefs) return _signDefs;
+  const V=(t,bg,fg)=>({ tex:svgTexture(vSignSVG(t,bg,fg),128,384), aspect:128/384 });
+  const H=(t,bg,fg)=>({ tex:svgTexture(hSignSVG(t,bg,fg),384,128), aspect:384/128 });
+  _signDefs={
+    blade:[ V('ラーメン','#c0182b','#ffffff'), V('居酒屋','#12305e','#ffd24a'), V('カラオケ','#9c1f6e','#ffffff'),
+            V('薬 局','#0d7a4a','#ffffff'), V('うどん','#e0a41b','#3a2600'), V('美容室','#7a2ea0','#ffffff'),
+            V('喫茶','#5a3b1e','#f5e6c8'), V('質','#1a1a1a','#ffcf2b'), V('寿司','#0e5a86','#ffffff') ],
+    flat:[ H('沖縄そば','#e5451f','#ffffff'), H('OPEN 営業中','#0a7d3c','#ffffff'), H('コンビニ 24h','#1553b0','#ffffff'),
+           H('DRUG 薬','#e59f0f','#3a2600'), H('CAFE 珈琲','#5a3b1e','#f5e6c8'), H('ゆいレール','#0072bc','#ffffff') ],
+  };
+  return _signDefs;
+}
+// orient so the plane's front (+Z) faces `fwd`; builds a right-handed basis (never mirrors the texture)
+function orientFace(mesh, fwd, up){
+  const z=fwd.clone().normalize();
+  const x=new THREE.Vector3().crossVectors(up, z).normalize();
+  const y=new THREE.Vector3().crossVectors(z, x).normalize();
+  const m=new THREE.Matrix4().makeBasis(x,y,z);
+  mesh.quaternion.setFromRotationMatrix(m);
+}
+// place one sign on a wall. nrm points from wall toward the road; tang runs along the wall.
+function placeSign(wx, wz, nrm, tang, maxH, kind, defs){
+  const list = kind==='blade'? defs.blade : defs.flat;
+  const def = list[(Math.random()*list.length)|0];
+  const nrmV=new THREE.Vector3(nrm[0],0,nrm[1]);
+  const tanV=new THREE.Vector3(tang[0],0,tang[1]);
+  const mkMat=()=> new THREE.MeshStandardMaterial({ map:def.tex, emissive:0xffffff, emissiveMap:def.tex, emissiveIntensity:0.16, roughness:0.72, side:THREE.FrontSide });
+  if (kind==='blade'){
+    const stick=0.72, signH=2.0+Math.random()*1.3;
+    const top=Math.min(maxH-0.5, 8.5);
+    const mount=Math.max(2.6, top - signH*0.5 - Math.random()*Math.max(0.1, top-3.5));
+    const px=wx+nrm[0]*(stick/2+0.05), pz=wz+nrm[1]*(stick/2+0.05);
+    // two back-to-back panels so text reads correctly from BOTH directions along the street
+    for (const dirV of [tanV, tanV.clone().negate()]){
+      const mesh=new THREE.Mesh(new THREE.PlaneGeometry(stick, signH), mkMat());
+      orientFace(mesh, dirV, SIGN_UP);               // width(stick) along nrm, front faces up/down street
+      mesh.position.set(px, mount, pz);
+      mesh.castShadow=true; mesh.receiveShadow=true; mesh.name='sign';
+      world.add(mesh);
+    }
+    return true;
+  } else {
+    const h=1.0+Math.random()*0.5, w=def.aspect*h;
+    const mesh=new THREE.Mesh(new THREE.PlaneGeometry(w, h), mkMat());
+    orientFace(mesh, nrmV, SIGN_UP);                 // flush on wall, front faces the road
+    const mount=1.7+Math.random()*1.3;
+    mesh.position.set(wx+nrm[0]*0.07, mount, wz+nrm[1]*0.07);
+    mesh.receiveShadow=true; mesh.castShadow=false; mesh.name='sign';
+    world.add(mesh); return true;
+  }
+}
+// scatter signs along the shop frontages of the main streets
+function addStreetSigns(roadWays, boxes){
+  if (!boxes.length) return;
+  const defs=signDefs();
+  const findBox=(x,z)=>{ for (const b of boxes){ if(x>=b.minx-0.4&&x<=b.maxx+0.4&&z>=b.minz-0.4&&z<=b.maxz+0.4) return b; } return null; };
+  const clamp=(v,a,b)=>v<a?a:(v>b?b:v);
+  const mains=roadWays.filter(rw=>['primary','secondary','tertiary','residential'].includes(rw.tags.highway));
+  // nearest to origin first, so density is highest where the user starts
+  mains.sort((A,B)=>{ const a=A.pts[0],b=B.pts[0]; return (a[0]*a[0]+a[1]*a[1])-(b[0]*b[0]+b[1]*b[1]); });
+  const MAX=190; let count=0;
+  for (const rw of mains){
+    if (count>=MAX) break;
+    const pts=rw.pts; const hw=roadWidth(rw.tags)/2;
+    let acc=0, nextAt=7+Math.random()*7, side=1;
+    for (let i=0;i<pts.length-1 && count<MAX;i++){
+      let x1=pts[i][0],z1=pts[i][1],x2=pts[i+1][0],z2=pts[i+1][1];
+      let dx=x2-x1,dz=z2-z1; const len=Math.hypot(dx,dz); if(len<0.1) continue; dx/=len;dz/=len;
+      let d=0;
+      while (d<len && count<MAX){
+        if (acc+(len-d) < nextAt){ acc+=len-d; break; }
+        d+=nextAt-acc; acc=0; nextAt=8+Math.random()*9; side=-side;
+        const rx=x1+dx*d, rz=z1+dz*d;
+        const perp=[-dz*side, dx*side];
+        const b=findBox(rx+perp[0]*(hw+1.4), rz+perp[1]*(hw+1.4));
+        if (!b || b.h<3) continue;
+        const wx=clamp(rx,b.minx,b.maxx), wz=clamp(rz,b.minz,b.maxz);
+        let nx=rx-wx, nz=rz-wz; const nl=Math.hypot(nx,nz);
+        if (nl<0.05){ nx=-perp[0]; nz=-perp[1]; } else { nx/=nl; nz/=nl; }
+        const nrm=[nx,nz], tang=[-nz,nx];
+        placeSign(wx, wz, nrm, tang, b.h, 'blade', defs); count++;
+        if (b.h>=3 && Math.random()<0.5 && count<MAX){ placeSign(wx, wz, nrm, tang, b.h, 'flat', defs); count++; }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- cars
+function makeCar(){
+  const g = new THREE.Group();
+  const hue = Math.random();
+  const bodyColor = new THREE.Color().setHSL(hue, 0.6, 0.5);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.1, 4.4),
+    new THREE.MeshStandardMaterial({ color:bodyColor, roughness:0.4, metalness:0.3 }));
+  body.position.y=0.8; body.castShadow=true; g.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.9, 2.2),
+    new THREE.MeshStandardMaterial({ color:0x111820, roughness:0.2, metalness:0.1 }));
+  cabin.position.set(0,1.55,-0.2); cabin.castShadow=true; g.add(cabin);
+  const wheelGeo = new THREE.CylinderGeometry(0.42,0.42,0.4,10);
+  const wheelMat = new THREE.MeshStandardMaterial({ color:0x0a0a0a, roughness:0.8 });
+  for (const [wx,wz] of [[0.95,1.4],[-0.95,1.4],[0.95,-1.4],[-0.95,-1.4]]){
+    const wl = new THREE.Mesh(wheelGeo, wheelMat);
+    wl.rotation.z=Math.PI/2; wl.position.set(wx,0.42,wz); g.add(wl);
+  }
+  return g;
+}
+function spawnCars(n){
+  cars.forEach(c=>world.remove(c.obj)); cars=[];
+  if (!ROADS_FOR_CARS.length) return;
+  for (let i=0;i<n;i++){
+    const road = ROADS_FOR_CARS[(Math.random()*ROADS_FOR_CARS.length)|0];
+    if (road.length<2) continue;
+    const obj = makeCar();
+    world.add(obj);
+    cars.push({ obj, road, seg:(Math.random()*(road.length-1))|0, t:Math.random(), speed:6+Math.random()*10, dir: Math.random()<0.5?1:-1 });
+  }
+}
+function updateCars(dt){
+  for (const c of cars){
+    const road=c.road;
+    let a=road[c.seg], b=road[c.seg+1];
+    if (!a||!b){ c.seg=0; continue; }
+    const segLen=Math.hypot(b[0]-a[0], b[1]-a[1]) || 1;
+    c.t += (c.speed*dt/segLen)*c.dir;
+    while (c.t>1){ c.t-=1; c.seg+=1; if (c.seg>=road.length-1){ c.seg=road.length-2; c.dir=-1; c.t=1; } a=road[c.seg]; b=road[c.seg+1]; if(!a||!b) break; }
+    while (c.t<0){ c.t+=1; c.seg-=1; if (c.seg<0){ c.seg=0; c.dir=1; c.t=0; } a=road[c.seg]; b=road[c.seg+1]; if(!a||!b) break; }
+    if (!a||!b) continue;
+    const x=a[0]+(b[0]-a[0])*c.t, z=a[1]+(b[1]-a[1])*c.t;
+    c.obj.position.set(x,0,z);
+    const ang=Math.atan2((b[0]-a[0])*c.dir, (b[1]-a[1])*c.dir);
+    c.obj.rotation.y=ang;
+  }
+}
+
+// ---------------------------------------------------------------- load flow
+async function loadPreset(key){
+  CURRENT = key;
+  const p = PRESETS[key];
+  ORIGIN = { lat:p.lat, lon:p.lon };
+  loadEl.classList.remove('hide');
+  // reset world
+  scene.remove(world); disposeGroup(world);
+  world = new THREE.Group(); scene.add(world);
+  cars=[]; buildingMeshes=[]; bldBoxes=[]; ROADS_FOR_CARS=[]; signals=[];
+  addGround();
+  camera.position.set(0,420,620); orbit.target.set(0,0,0);
+  try {
+    const osm = await fetchOSM(p);
+    setMsg('3D生成中…');
+    await new Promise(r=>setTimeout(r,16));
+    const { bCount, rCount } = buildWorld(osm);
+    if (carsOn) spawnCars(Math.min(46, Math.max(10, (ROADS_FOR_CARS.length*0.5)|0)));
+    statsEl.innerHTML = `📍 ${p.name}<br>🏢 建物 ${bCount.toLocaleString()} · 🛣 道路 ${rCount.toLocaleString()} · 🚗 車 ${cars.length}`;
+    applyToggles();
+    setTimeout(()=>loadEl.classList.add('hide'), 250);
+    toast(`${p.name} を読み込みました`);
+  } catch(err){
+    console.error(err);
+    setMsg('データ取得に失敗しました。再試行してください。');
+    statsEl.textContent = '読み込み失敗: '+(err.message||err);
+    setTimeout(()=>loadEl.classList.add('hide'), 1800);
+  }
+}
+function disposeGroup(g){
+  g.traverse(o=>{
+    if (o.geometry) o.geometry.dispose();
+    if (o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose()); }
+  });
+}
+
+// ---------------------------------------------------------------- toggles
+let shadowsOn=true, carsOn=true, wireOn=false, signsOn=true;
+function applyToggles(){
+  renderer.shadowMap.enabled = shadowsOn;
+  buildingMeshes.forEach(m=>{ m.castShadow=shadowsOn; });
+  dir.castShadow = shadowsOn;
+  const wire = world.getObjectByName('wire'); if (wire) wire.visible = wireOn;
+  cars.forEach(c=>c.obj.visible = carsOn);
+  world.traverse(o=>{ if(o.name==='sign') o.visible=signsOn; });
+  renderer.shadowMap.needsUpdate = true;
+}
+
+// ---------------------------------------------------------------- UI wiring
+const locrow = document.getElementById('locrow');
+for (const [k,p] of Object.entries(PRESETS)){
+  const b=document.createElement('button');
+  b.className='chip'+(k===CURRENT?' on':''); b.textContent=p.name; b.dataset.k=k;
+  b.onclick=()=>{ if(k===CURRENT) return; [...locrow.children].forEach(c=>c.classList.remove('on')); b.classList.add('on'); loadPreset(k); };
+  locrow.appendChild(b);
+}
+const mOrbit=document.getElementById('mOrbit'), mWalk=document.getElementById('mWalk');
+mOrbit.onclick=()=>setMode('orbit');
+mWalk.onclick=()=>setMode('walk');
+function setMode(m){
+  if (m===mode){ if(m==='walk' && !walk.isLocked) walk.lock(); return; }
+  mode=m;
+  mOrbit.classList.toggle('on', m==='orbit');
+  mWalk.classList.toggle('on', m==='walk');
+  if (m==='walk'){
+    orbit.enabled=false;
+    // drop camera to a street point near origin
+    camera.position.set(0, 1.7, 40);
+    camera.lookAt(0,1.7,0);
+    walk.lock();
+    toast('クリックで開始 · WASD移動 · Escで終了');
+  } else {
+    orbit.enabled=true;
+    if (walk.isLocked) walk.unlock();
+    camera.position.set(0,420,620); orbit.target.set(0,0,0);
+  }
+}
+walk.addEventListener('unlock', ()=>{ if(mode==='walk'){ mode='orbit'; mOrbit.classList.add('on'); mWalk.classList.remove('on'); orbit.enabled=true; } });
+
+document.getElementById('tShadow').onclick=(e)=>{ shadowsOn=!shadowsOn; e.target.classList.toggle('on',shadowsOn); applyToggles(); };
+document.getElementById('tCars').onclick=(e)=>{ carsOn=!carsOn; e.target.classList.toggle('on',carsOn); if(carsOn && !cars.length) spawnCars(28); applyToggles(); };
+document.getElementById('tSign').onclick=(e)=>{ signsOn=!signsOn; e.target.classList.toggle('on',signsOn); applyToggles(); };
+document.getElementById('tWire').onclick=(e)=>{ wireOn=!wireOn; e.target.classList.toggle('on',wireOn); applyToggles(); };
+
+// ---------------------------------------------------------------- walk movement + collision
+function moveWalk(dt){
+  const speed = (keys['ShiftLeft']||keys['ShiftRight']? 34:15);
+  const fwd = (keys['KeyW']?1:0)-(keys['KeyS']?1:0);
+  const strafe = (keys['KeyD']?1:0)-(keys['KeyA']?1:0);
+  walkVel.x -= walkVel.x*8*dt;
+  walkVel.z -= walkVel.z*8*dt;
+  if (fwd)    walkVel.z -= fwd*speed*dt;
+  if (strafe) walkVel.x += strafe*speed*dt;
+  const before = camera.position.clone();
+  walk.moveRight(walkVel.x*dt);
+  walk.moveForward(-walkVel.z*dt);
+  camera.position.y = 1.7;
+  // simple building collision: if inside a footprint, revert horizontal
+  const px=camera.position.x, pz=camera.position.z;
+  for (const b of bldBoxes){
+    if (px>b.minx-1 && px<b.maxx+1 && pz>b.minz-1 && pz<b.maxz+1){
+      camera.position.x=before.x; camera.position.z=before.z; break;
+    }
+  }
+}
+
+// ---------------------------------------------------------------- resize
+function onResize(){
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+}
+addEventListener('resize', onResize);
+addEventListener('orientationchange', ()=>setTimeout(onResize,200));
+
+// ---------------------------------------------------------------- loop
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (mode==='orbit'){ orbit.update(); }
+  else if (walk.isLocked){ moveWalk(dt); }
+  if (carsOn) updateCars(dt);
+  if (signals.length){ sigClock += dt; updateSignals(); }
+  // sun follows target near camera focus for crisp shadows
+  const focus = (mode==='orbit')? orbit.target : camera.position;
+  dir.position.set(focus.x + sun.x*1200, sun.y*1200, focus.z + sun.z*1200);
+  dir.target.position.set(focus.x, 0, focus.z);
+  // compass
+  const yaw = Math.atan2(camera.matrix.elements[8], camera.matrix.elements[10]);
+  needle.style.transform = `rotate(${yaw}rad)`;
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---------------------------------------------------------------- go
+loadPreset(CURRENT);
+window.__world = { scene, camera, renderer, orbit, PRESETS, loadPreset:(k)=>loadPreset(k), get cars(){return cars;}, get boxes(){return bldBoxes;}, get signals(){return signals;} };
+</script>
+</body>
+</html>
